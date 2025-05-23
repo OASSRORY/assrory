@@ -1,0 +1,3535 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة الموردين</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#40B3EF',
+                        secondary: '#0047AB',
+                        light: '#F0F8FF',
+                        dark: '#002147'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+        
+        * {
+            font-family: 'Tajawal', sans-serif;
+        }
+        
+        .tree-view .tree-content {
+            display: none;
+        }
+        
+        .tree-view.active .tree-content {
+            display: block;
+        }
+        
+        .tree-view .tree-toggle::before {
+            content: "+";
+            margin-left: 5px;
+            font-weight: bold;
+        }
+        
+        .tree-view.active .tree-toggle::before {
+            content: "-";
+        }
+        
+        .dark .bg-white {
+            background-color: #181818;
+            color: white;
+        }
+        
+        .dark .border-gray-200 {
+            border-color: #333;
+        }
+        
+        .dark .text-gray-700 {
+            color: #ddd;
+        }
+        
+        .dark .bg-gray-100 {
+            background-color: #222;
+        }
+        
+        .dark .bg-light {
+            background-color: #222;
+        }
+
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            
+            .print-only {
+                display: block !important;
+            }
+            
+            .hide-in-print-data-only.print-data-only {
+                display: none !important;
+            }
+            
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+            
+            body {
+                font-size: 12pt;
+            }
+            
+            /* تثبيت الترويسة في أعلى كل صفحة عند الطباعة */
+            .print-header {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                padding: 10px 0;
+                background-color: white;
+                border-bottom: 1px solid #ddd;
+            }
+            
+            /* إضافة مسافة بين الترويسة والمحتوى */
+            .print-content {
+                margin-top: 120px;
+            }
+        }
+        
+        .rtl-grid {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        input, select, textarea {
+            text-align: right;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: right;
+        }
+        
+        th {
+            background-color: #40B3EF;
+            color: white;
+            font-weight: bold;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        
+        .dark tr:nth-child(even) {
+            background-color: #2a2a2a;
+        }
+        
+        .dark th {
+            background-color: #205375;
+        }
+        
+        .dark td, .dark th {
+            border-color: #444;
+        }
+        
+        .diff-positive {
+            color: green;
+            font-weight: bold;
+        }
+        
+        .diff-negative {
+            color: red;
+            font-weight: bold;
+        }
+        
+        /* تخصيص حجم الشعار */
+        .company-logo {
+            max-width: 100px;
+            max-height: 100px;
+            object-fit: contain;
+        }
+        
+        .print-logo {
+            max-width: 80px;
+            max-height: 80px;
+        }
+    </style>
+</head>
+<body class="bg-light dark:bg-dark text-gray-800 dark:text-gray-100">
+    <div class="flex flex-col min-h-screen">
+        <!-- Header Section -->
+        <header class="bg-primary text-white p-4 shadow-md">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">نظام إدارة الموردين</h1>
+                <div class="company-info" id="companyInfoDisplay">
+                    <!-- Company info will be displayed here -->
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="flex flex-col md:flex-row flex-1">
+            <!-- Sidebar Navigation -->
+            <nav class="w-full md:w-64 bg-white dark:bg-gray-900 p-4 border-r border-gray-200 dark:border-gray-700 no-print">
+                <div class="mb-6">
+                    <h2 class="text-lg font-bold text-secondary mb-2">القائمة الرئيسية</h2>
+                    
+                    <!-- Tree Navigation -->
+                    <div class="tree-container">
+                        <!-- Settings -->
+                        <div class="tree-view mb-2">
+                            <div class="tree-toggle cursor-pointer font-bold text-secondary hover:text-primary">
+                                الإعدادات
+                            </div>
+                            <div class="tree-content pr-4 mt-2">
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="system-settings">إعدادات النظام</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="import-export-settings">إعدادات الاستيراد والتصدير</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="regional-settings">الإعدادات الإقليمية</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="company-info">بيانات الشركة</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="document-types-settings">إعدادات أنواع المستندات</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Data Entry -->
+                        <div class="tree-view mb-2">
+                            <div class="tree-toggle cursor-pointer font-bold text-secondary hover:text-primary">
+                                المدخلات
+                            </div>
+                            <div class="tree-content pr-4 mt-2">
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="supplier-data">بيانات الموردين</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="account-statements">كشوفات الحساب</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="commission-setup">ترميز عمولات الموردين</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Operations -->
+                        <div class="tree-view mb-2">
+                            <div class="tree-toggle cursor-pointer font-bold text-secondary hover:text-primary">
+                                العمليات
+                            </div>
+                            <div class="tree-content pr-4 mt-2">
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="match-statements">مطابقة كشف الحساب</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="unposted-transactions">العمليات الغير مرحلة</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="manage-commissions">إدارة عمولات الموردين</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Reports -->
+                        <div class="tree-view mb-2">
+                            <div class="tree-toggle cursor-pointer font-bold text-secondary hover:text-primary">
+                                التقارير
+                            </div>
+                            <div class="tree-content pr-4 mt-2">
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="matching-report">تقرير المطابقة</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="commission-report">تقرير العمولات</div>
+                                <div class="cursor-pointer py-1 hover:text-primary" data-screen="financial-metrics">تقرير المؤشرات المالية</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Main Content Area -->
+            <main class="flex-1 p-6 bg-white dark:bg-gray-800 overflow-auto">
+                <div id="content-area" class="min-h-full">
+                    <!-- Default welcome screen -->
+                    <div id="welcome-screen" class="text-center py-10">
+                        <h2 class="text-3xl font-bold text-secondary mb-4">مرحبًا بك في نظام إدارة الموردين</h2>
+                        <p class="text-lg mb-6">
+                            الرجاء اختيار إحدى الوظائف من القائمة الجانبية للبدء
+                        </p>
+                        <div class="mt-8">
+                            <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xMiAyMkM2LjQ4IDIyIDIgMTcuNTIgMiAxMkMyIDYuNDggNi40OCAyIDEyIDJDMTcuNTIgMiAyMiA2LjQ4IDIyIDEyQzIyIDE3LjUyIDE3LjUyIDIyIDEyIDIyWk0xMiAyMEMxNi40MiAyMCAyMCAxNi40MiAyMCAxMkMyMCA3LjU4IDE2LjQyIDQgMTIgNEM3LjU4IDQgNCAgNy41OCA0IDEyQzQgMTYuNDIgNy41OCAyMCAxMiAyMFpNMTYuNSAxMUgxNFY4LjVDMTQgNy42NyAxMy4zMyA3IDEyLjUgN0gxMS41QzEwLjY3IDcgMTAgNy42NyAxMCA4LjVWMTNIMTEuNVYxNS41QzExLjUgMTYuMzMgMTIuMTcgMTcgMTMgMTdIMTRDMTQuODMgMTcgMTUuNSAxNi4zMyAxNS41IDE1LjVWMTNIMTYuNUMxNy4zMyAxMyAxOCAxMi4zMyAxOCAxMS41QzE4IDEwLjY3IDE3LjMzIDEwIDE2LjUgMTBIMTQuNVYxMUgxNi41WiIgZmlsbD0iIzQwQjNFRiIvPjwvc3ZnPg==" alt="شعار النظام" class="mx-auto h-32">
+                        </div>
+                    </div>
+                    
+                    <!-- Screen content will be loaded here -->
+                    <div id="system-settings" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">إعدادات النظام</h2>
+                        <!-- System settings content will be here -->
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-secondary mb-2">الإعدادات العامة</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">اسم النظام</label>
+                                    <input type="text" id="systemName" value="نظام إدارة الموردين" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">نسخة النظام</label>
+                                    <input type="text" id="systemVersion" value="1.3" class="w-full p-2 border border-gray-300 rounded text-base" readonly>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <button id="saveSystemSettings" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ الإعدادات</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="import-export-settings" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">إعدادات الاستيراد والتصدير</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-secondary mb-2">إعدادات استيراد ملفات الإكسل</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">ترتيب أعمدة بيانات الموردين</label>
+                                    <div class="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                                        الترتيب الحالي: الكود، اسم المورد، العنوان، تلفون، تلفون، فاكس، الحســــاب، المـــرجــــع
+                                    </div>
+                                    <button id="resetSupplierColumns" class="bg-gray-200 dark:bg-gray-600 px-4 py-2 rounded hover:bg-gray-300 dark:hover:bg-gray-500">إعادة تعيين إلى الافتراضي</button>
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">ترتيب أعمدة كشوفات الحساب</label>
+                                    <div class="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                                        الترتيب الحالي: الفرع، التاريخ، رقم المستند، البيان، قيمة البضاعة المتبقية، مدين، دائن، الرصيد
+                                    </div>
+                                    <button id="resetStatementColumns" class="bg-gray-200 dark:bg-gray-600 px-4 py-2 rounded hover:bg-gray-300 dark:hover:bg-gray-500">إعادة تعيين إلى الافتراضي</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- شاشة إعدادات أنواع المستندات -->
+                    <div id="document-types-settings" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">إعدادات أنواع المستندات</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-secondary mb-2">تعريف أنواع المستندات الحالية</h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                                يمكنك تخصيص كيفية تحديد أنواع المستندات من خلال تعريف الكلمات المفتاحية التي تدل على كل نوع
+                            </p>
+                            
+                            <div class="table-container mb-6">
+                                <table id="docTypesTable" class="w-full border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th>نوع المستند</th>
+                                            <th>الكلمات المفتاحية للتعرف على النوع</th>
+                                            <th>العمليات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="docTypesTableBody">
+                                        <!-- ستتم تعبئة البيانات هنا من الجافاسكريبت -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <h3 class="text-lg font-bold text-secondary mb-2">إضافة نوع مستند جديد</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">اسم نوع المستند</label>
+                                    <input type="text" id="newDocTypeName" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="مثال: فاتورة ضريبية">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">الكلمات المفتاحية (مفصولة بفواصل)</label>
+                                    <input type="text" id="newDocTypeKeywords" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="مثال: فاتورة ضريبية, ضريبة, ضريبة القيمة المضافة">
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <button id="addNewDocType" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">إضافة نوع مستند جديد</button>
+                            </div>
+                            
+                            <div class="mt-6">
+                                <button id="saveDocTypesSettings" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">حفظ إعدادات أنواع المستندات</button>
+                                <button id="resetDocTypesSettings" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mr-2">إعادة تعيين إلى الافتراضي</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="regional-settings" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">الإعدادات الإقليمية</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-secondary mb-2">إعدادات العملة والأرقام</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">العملة</label>
+                                    <select id="currency" class="w-full p-2 border border-gray-300 rounded text-base">
+                                        <option value="YER" selected>ريال يمني (YER)</option>
+                                        <option value="SAR">ريال سعودي (SAR)</option>
+                                        <option value="USD">دولار أمريكي (USD)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">تنسيق الأرقام</label>
+                                    <select id="numberFormat" class="w-full p-2 border border-gray-300 rounded text-base">
+                                        <option value="comma" selected>1,000,000.00</option>
+                                        <option value="dot">1.000.000,00</option>
+                                        <option value="space">1 000 000.00</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">السماح بالأرقام السالبة</label>
+                                    <select id="allowNegative" class="w-full p-2 border border-gray-300 rounded text-base">
+                                        <option value="true" selected>نعم</option>
+                                        <option value="false">لا</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <button id="saveRegionalSettings" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ الإعدادات</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="company-info" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">بيانات الشركة</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">اسم الشركة (عربي)</label>
+                                    <input type="text" id="companyNameAr" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل اسم الشركة">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">اسم الشركة (إنجليزي)</label>
+                                    <input type="text" id="companyNameEn" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="Enter company name">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">الفرع</label>
+                                    <input type="text" id="companyBranch" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل اسم الفرع">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">العنوان</label>
+                                    <input type="text" id="companyAddress" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل عنوان الشركة">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">رقم الموبايل</label>
+                                    <input type="text" id="companyMobile" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل رقم الموبايل">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">رقم الواتس</label>
+                                    <input type="text" id="companyWhatsapp" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل رقم الواتس">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">رقم الهاتف</label>
+                                    <input type="text" id="companyPhone" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل رقم الهاتف">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">البريد الإلكتروني</label>
+                                    <input type="email" id="companyEmail" class="w-full p-2 border border-gray-300 rounded text-base" placeholder="أدخل البريد الإلكتروني">
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block mb-2 font-bold">شعار الشركة</label>
+                                <div class="flex items-center">
+                                    <div id="logoDisplay" class="w-32 h-32 border border-gray-300 flex items-center justify-center mb-2 bg-white">
+                                        <span class="text-gray-500">لا يوجد شعار</span>
+                                    </div>
+                                    <div class="mr-4">
+                                        <input type="file" id="companyLogo" accept="image/*" class="block w-full text-sm text-gray-500
+                                            file:mr-4 file:py-2 file:px-4
+                                            file:rounded file:border-0
+                                            file:text-sm file:font-semibold
+                                            file:bg-primary file:text-white
+                                            hover:file:bg-secondary">
+                                        <div class="mt-2">
+                                            <label class="block mb-2 font-bold">حجم الشعار للطباعة (%)</label>
+                                            <input type="range" id="logoSize" min="20" max="100" value="80" class="w-full">
+                                            <span id="logoSizeValue">80%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <button id="saveCompanyInfo" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ البيانات</button>
+                                <div id="companyInfoStatus" class="mt-2 text-green-500 hidden">تم حفظ البيانات بنجاح</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="supplier-data" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">بيانات الموردين</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-secondary mb-2">استيراد بيانات الموردين</h3>
+                            <div class="mb-4">
+                                <input type="file" id="supplierFileInput" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500
+                                    file:mr-4 file:py-2 file:px-4
+                                    file:rounded file:border-0
+                                    file:text-sm file:font-semibold
+                                    file:bg-primary file:text-white
+                                    hover:file:bg-secondary">
+                                <p class="text-sm text-gray-600 dark:text-gray-300 mt-2">
+                                    يجب أن يحتوي ملف الإكسل على الحقول التالية: الكود، اسم المورد، العنوان، تلفون، تلفون، فاكس، الحســــاب، المـــرجــــع
+                                </p>
+                            </div>
+                            <div class="mb-4">
+                                <button id="importSuppliers" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">استيراد البيانات</button>
+                                <button id="clearSuppliers" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mr-2">مسح البيانات</button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <h3 class="text-xl font-bold text-secondary mb-2">قائمة الموردين</h3>
+                            <div class="mb-4">
+                                <input type="text" id="supplierSearch" placeholder="بحث عن مورد..." class="w-full p-2 border border-gray-300 rounded text-base">
+                            </div>
+                            <div class="table-container">
+                                <table id="suppliersTable" class="w-full border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th>الكود</th>
+                                            <th>اسم المورد</th>
+                                            <th>العنوان</th>
+                                            <th>تلفون</th>
+                                            <th>فاكس</th>
+                                            <th>الحساب المرجع</th>
+                                            <th>العمليات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="suppliersTableBody">
+                                        <!-- Suppliers will be loaded here -->
+                                        <tr>
+                                            <td colspan="7" class="text-center py-4">لا توجد بيانات متاحة</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- شاشة ترميز عمولات الموردين -->
+                    <div id="commission-setup" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">ترميز عمولات الموردين</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="commissionSetupSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            
+                            <div class="mb-4 mt-6">
+                                <h3 class="text-lg font-bold text-secondary mb-4">تعريف نوع العمولة الافتراضية</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block mb-2 font-bold">نوع العمولة الافتراضية</label>
+                                        <select id="defaultCommissionType" class="w-full p-2 border border-gray-300 rounded text-base">
+                                            <option value="cash" selected>عمولة نقدية</option>
+                                            <option value="kind">عمولة عينية</option>
+                                            <option value="inclusive">شاملة العمولة</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block mb-2 font-bold">نسبة العمولة الافتراضية (%)</label>
+                                        <input type="number" id="defaultCommissionPercentage" class="w-full p-2 border border-gray-300 rounded text-base" value="10" min="0" max="100" step="0.01">
+                                    </div>
+                                    <div>
+                                        <label class="block mb-2 font-bold">تطبيق على</label>
+                                        <select id="defaultCommissionBasis" class="w-full p-2 border border-gray-300 rounded text-base">
+                                            <option value="purchases" selected>صافي المشتريات</option>
+                                            <option value="payments">إجمالي السداد</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6">
+                                <h3 class="text-lg font-bold text-secondary mb-4">تعريف العمولة حسب نوع المستند</h3>
+                                <div class="table-container">
+                                    <table id="docCommissionTable" class="w-full border-collapse">
+                                        <thead>
+                                            <tr>
+                                                <th>نوع المستند</th>
+                                                <th>تطبيق العمولة</th>
+                                                <th>نوع العمولة</th>
+                                                <th>نسبة العمولة (%)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="docCommissionTableBody">
+                                            <!-- سيتم تعبئة البيانات هنا من الجافاسكريبت -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4">
+                                <button id="saveCommissionSetup" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ إعدادات العمولة</button>
+                                <button id="resetCommissionSetup" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mr-2">إعادة تعيين إلى الافتراضي</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="account-statements" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">كشوفات الحساب</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-secondary mb-2">استيراد كشف حساب</h3>
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="statementSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <div class="mb-4">
+                                <input type="file" id="statementFileInput" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500
+                                    file:mr-4 file:py-2 file:px-4
+                                    file:rounded file:border-0
+                                    file:text-sm file:font-semibold
+                                    file:bg-primary file:text-white
+                                    hover:file:bg-secondary">
+                                <p class="text-sm text-gray-600 dark:text-gray-300 mt-2">
+                                    يجب أن يحتوي ملف الإكسل على الحقول التالية: الفرع، التاريخ، رقم المستند، البيان، قيمة البضاعة المتبقية، مدين، دائن، الرصيد
+                                </p>
+                            </div>
+                            <div class="mb-4">
+                                <button id="importStatement" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">استيراد الكشف</button>
+                                <button id="clearStatement" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mr-2">مسح الكشف</button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <h3 class="text-xl font-bold text-secondary mb-2">كشف الحساب</h3>
+                            <div class="mb-4">
+                                <select id="viewStatementSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد لعرض الكشف --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <div class="mb-2 flex justify-between items-center">
+                                <div id="statementNumber" class="text-primary font-bold"></div>
+                                <div id="statementDate" class="text-gray-600"></div>
+                            </div>
+                            <div class="table-container">
+                                <table id="statementsTable" class="w-full border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th>الفرع</th>
+                                            <th>التاريخ</th>
+                                            <th>رقم المستند</th>
+                                            <th>نوع المستند</th>
+                                            <th>البيان</th>
+                                            <th>قيمة البضاعة المتبقية</th>
+                                            <th>مدين</th>
+                                            <th>دائن</th>
+                                            <th>الرصيد</th>
+                                            <th>العمليات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="statementsTableBody">
+                                        <!-- Statements will be loaded here -->
+                                        <tr>
+                                            <td colspan="10" class="text-center py-4">لا توجد بيانات متاحة</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-4 flex gap-2">
+                                <button id="printStatement" class="bg-secondary text-white px-4 py-2 rounded hover:bg-primary">
+                                    طباعة الكشف
+                                </button>
+                                <button id="sendStatementWhatsapp" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 hidden">
+                                    إرسال الكشف عبر الواتساب
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="match-statements" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">مطابقة كشف الحساب</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="matchSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <h3 class="text-xl font-bold text-secondary mb-2">عمليات المطابقة</h3>
+                            <div class="table-container">
+                                <table id="matchingTable" class="w-full border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th>الفرع</th>
+                                            <th>التاريخ</th>
+                                            <th>رقم المستند</th>
+                                            <th>نوع المستند</th>
+                                            <th>البيان</th>
+                                            <th>مدين</th>
+                                            <th>دائن</th>
+                                            <th>الرصيد</th>
+                                            <th>حالة المطابقة</th>
+                                            <th>مبلغ المورد</th>
+                                            <th>الفارق</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="matchingTableBody">
+                                        <!-- Matching data will be loaded here -->
+                                        <tr>
+                                            <td colspan="11" class="text-center py-4">يرجى اختيار مورد أولاً</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-4">
+                                <button id="saveMatching" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ المطابقة</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- شاشة العمليات الغير مرحلة الجديدة -->
+                    <div id="unposted-transactions" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">العمليات الغير مرحلة</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="unpostedSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <button id="addUnpostedTransaction" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">إضافة عملية جديدة</button>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <h3 class="text-xl font-bold text-secondary mb-2">قائمة العمليات الغير مرحلة</h3>
+                            <div class="table-container">
+                                <table id="unpostedTable" class="w-full border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th>الفرع</th>
+                                            <th>التاريخ</th>
+                                            <th>رقم المستند</th>
+                                            <th>نوع المستند</th>
+                                            <th>البيان</th>
+                                            <th>قيمة البضاعة المتبقية</th>
+                                            <th>مدين</th>
+                                            <th>دائن</th>
+                                            <th>الرصيد</th>
+                                            <th>العمليات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="unpostedTableBody">
+                                        <!-- Unposted transactions will be loaded here -->
+                                        <tr>
+                                            <td colspan="10" class="text-center py-4">يرجى اختيار مورد أولاً</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="manage-commissions" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">إدارة عمولات الموردين</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="commissionSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <div class="mt-4">
+                                <button id="calculateDefaultCommission" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">حساب العمولة حسب الإعدادات</button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <h3 class="text-xl font-bold text-secondary mb-2">إدارة العمولات</h3>
+                            <div class="table-container">
+                                <table id="commissionsTable" class="w-full border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th>التاريخ</th>
+                                            <th>رقم المستند</th>
+                                            <th>نوع المستند</th>
+                                            <th>البيان</th>
+                                            <th>مدين</th>
+                                            <th>دائن</th>
+                                            <th>مرتبط بعمولة</th>
+                                            <th>نوع العمولة</th>
+                                            <th>نسبة العمولة</th>
+                                            <th>مبلغ العمولة</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="commissionsTableBody">
+                                        <!-- Commission data will be loaded here -->
+                                        <tr>
+                                            <td colspan="10" class="text-center py-4">يرجى اختيار مورد أولاً</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <h4 class="text-lg font-bold text-secondary mb-2">ملخص العمولات</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <label class="block mb-2 font-bold">إجمالي العمولة النقدية</label>
+                                        <div id="totalCashCommission" class="p-2 bg-white dark:bg-gray-600 border border-gray-300 rounded">0.00</div>
+                                    </div>
+                                    <div>
+                                        <label class="block mb-2 font-bold">إجمالي العمولة العينية</label>
+                                        <div id="totalInKindCommission" class="p-2 bg-white dark:bg-gray-600 border border-gray-300 rounded">0.00</div>
+                                    </div>
+                                    <div>
+                                        <label class="block mb-2 font-bold">العمولة النقدية المستلمة</label>
+                                        <input type="number" id="receivedCashCommission" class="w-full p-2 border border-gray-300 rounded text-base" value="0">
+                                    </div>
+                                    <div>
+                                        <label class="block mb-2 font-bold">العمولة العينية المستلمة</label>
+                                        <input type="number" id="receivedInKindCommission" class="w-full p-2 border border-gray-300 rounded text-base" value="0">
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <button id="saveCommissions" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ العمولات</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="matching-report" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">تقرير المطابقة</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="matchingReportSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">من تاريخ</label>
+                                    <input type="date" id="matchingReportFromDate" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">إلى تاريخ</label>
+                                    <input type="date" id="matchingReportToDate" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block mb-2 font-bold">حالة المطابقة</label>
+                                <div class="flex flex-wrap gap-4">
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="matchingStatus" value="all" class="form-radio h-5 w-5 text-primary" checked>
+                                        <span class="mr-2">الكل</span>
+                                    </label>
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="matchingStatus" value="matched" class="form-radio h-5 w-5 text-primary">
+                                        <span class="mr-2">العمليات المطابقة</span>
+                                    </label>
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="matchingStatus" value="unmatched" class="form-radio h-5 w-5 text-primary">
+                                        <span class="mr-2">العمليات غير المطابقة</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block mb-2 font-bold">نوع المستند</label>
+                                <select id="matchingReportDocType" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="all">جميع المستندات</option>
+                                    <!-- سيتم تعبئة أنواع المستندات من الجافاسكريبت -->
+                                </select>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block mb-2 font-bold">خيارات الطباعة</label>
+                                <div class="flex flex-wrap gap-4">
+                                    <label class="inline-flex items-center mr-4">
+                                        <input type="checkbox" id="printHeaderOnly" class="form-checkbox h-5 w-5 text-primary">
+                                        <span class="mr-2">طباعة الترويسة فقط</span>
+                                    </label>
+                                    <label class="inline-flex items-center mr-4">
+                                        <input type="radio" name="printOrientation" value="portrait" class="form-radio h-5 w-5 text-primary" checked>
+                                        <span class="mr-2">طباعة عمودي</span>
+                                    </label>
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="printOrientation" value="landscape" class="form-radio h-5 w-5 text-primary">
+                                        <span class="mr-2">طباعة أفقي</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center">
+                                <button id="generateMatchingReport" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">إنشاء التقرير</button>
+                                <button id="printMatchingReport" class="bg-secondary text-white px-4 py-2 rounded hover:bg-primary mr-2 hidden">طباعة التقرير</button>
+                            </div>
+                        </div>
+                        
+                        <div id="matchingReportContent" class="mt-6 hidden">
+                            <div id="matchingReportHeader" class="text-center mb-4 print-only">
+                                <!-- Report header will be added here -->
+                            </div>
+                            
+                            <div id="matchingReportTable" class="table-container hide-in-print-data-only">
+                                <!-- Report table will be added here -->
+                            </div>
+                            
+                            <div id="matchingReportSummary" class="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg hide-in-print-data-only">
+                                <!-- Report summary will be added here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="commission-report" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">تقرير العمولات</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="commissionReportSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">من تاريخ</label>
+                                    <input type="date" id="commissionReportFromDate" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">إلى تاريخ</label>
+                                    <input type="date" id="commissionReportToDate" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">نوع التقرير</label>
+                                <select id="commissionReportType" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="detailed">تفصيلي</option>
+                                    <option value="summary">إجمالي</option>
+                                </select>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block mb-2 font-bold">نوع المستند</label>
+                                <select id="commissionReportDocType" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="all">جميع المستندات</option>
+                                    <!-- سيتم تعبئة أنواع المستندات من الجافاسكريبت -->
+                                </select>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block mb-2 font-bold">خيارات الطباعة</label>
+                                <div class="flex flex-wrap gap-4">
+                                    <label class="inline-flex items-center mr-4">
+                                        <input type="checkbox" id="printCommHeaderOnly" class="form-checkbox h-5 w-5 text-primary">
+                                        <span class="mr-2">طباعة الترويسة فقط</span>
+                                    </label>
+                                    <label class="inline-flex items-center mr-4">
+                                        <input type="radio" name="commPrintOrientation" value="portrait" class="form-radio h-5 w-5 text-primary" checked>
+                                        <span class="mr-2">طباعة عمودي</span>
+                                    </label>
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="commPrintOrientation" value="landscape" class="form-radio h-5 w-5 text-primary">
+                                        <span class="mr-2">طباعة أفقي</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center">
+                                <button id="generateCommissionReport" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">إنشاء التقرير</button>
+                                <button id="printCommissionReport" class="bg-secondary text-white px-4 py-2 rounded hover:bg-primary mr-2 hidden">طباعة التقرير</button>
+                            </div>
+                        </div>
+                        
+                        <div id="commissionReportContent" class="mt-6 hidden">
+                            <div id="commissionReportHeader" class="text-center mb-4 print-only">
+                                <!-- Report header will be added here -->
+                            </div>
+                            
+                            <div id="commissionReportTable" class="table-container hide-in-print-data-only">
+                                <!-- Report table will be added here -->
+                            </div>
+                            
+                            <div id="commissionReportSummary" class="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg hide-in-print-data-only">
+                                <!-- Report summary will be added here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- شاشة تقرير المؤشرات المالية المحسنة -->
+                    <div id="financial-metrics" class="screen-content hidden">
+                        <h2 class="text-2xl font-bold text-secondary mb-4">تقرير المؤشرات المالية</h2>
+                        <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                            <div class="mb-4">
+                                <label class="block mb-2 font-bold">اختر المورد</label>
+                                <select id="financialMetricsSupplier" class="w-full p-2 border border-gray-300 rounded text-base">
+                                    <option value="">-- اختر المورد --</option>
+                                    <!-- Suppliers will be loaded here -->
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block mb-2 font-bold">من تاريخ</label>
+                                    <input type="date" id="financialMetricsFromDate" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                                <div>
+                                    <label class="block mb-2 font-bold">إلى تاريخ</label>
+                                    <input type="date" id="financialMetricsToDate" class="w-full p-2 border border-gray-300 rounded text-base">
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center">
+                                <button id="generateFinancialMetrics" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">إنشاء التقرير</button>
+                                <button id="printFinancialMetrics" class="bg-secondary text-white px-4 py-2 rounded hover:bg-primary mr-2 hidden">طباعة التقرير</button>
+                            </div>
+                        </div>
+                        
+                        <div id="financialMetricsContent" class="mt-6 hidden">
+                            <div id="financialMetricsHeader" class="text-center mb-4 print-only print-header">
+                                <!-- Report header will be added here -->
+                            </div>
+                            
+                            <div class="print-content">
+                                <div id="documentTypesSummary" class="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg mb-6">
+                                    <h4 class="text-lg font-bold text-secondary mb-4">ملخص العمليات حسب نوع المستند</h4>
+                                    <div class="table-container">
+                                        <table id="documentTypesSummaryTable" class="w-full border-collapse">
+                                            <thead>
+                                                <tr>
+                                                    <th>نوع المستند</th>
+                                                    <th>عدد العمليات</th>
+                                                    <th>إجمالي المدين</th>
+                                                    <th>إجمالي الدائن</th>
+                                                    <th>الرصيد الصافي</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="documentTypesSummaryTableBody">
+                                                <!-- سيتم إضافة بيانات ملخص أنواع المستندات هنا -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                    <h4 class="text-lg font-bold text-secondary mb-4">ملخص المؤشرات المالية</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div class="bg-white dark:bg-gray-600 p-4 rounded shadow">
+                                            <h5 class="text-md font-bold mb-3">المشتريات الآجلة</h5>
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label class="block text-sm mb-1">إجمالي فواتير المشتريات الآجلة:</label>
+                                                    <div id="totalCreditPurchases" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-sm mb-1">إجمالي مردودات المشتريات الآجلة:</label>
+                                                    <div id="totalCreditReturns" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label class="block font-bold text-sm mb-1">صافي المشتريات الآجلة:</label>
+                                                    <div id="netCreditPurchases" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded font-bold">0.00</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-white dark:bg-gray-600 p-4 rounded shadow">
+                                            <h5 class="text-md font-bold mb-3">المشتريات النقدية</h5>
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label class="block text-sm mb-1">إجمالي فواتير المشتريات النقدية:</label>
+                                                    <div id="totalCashPurchases" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-sm mb-1">إجمالي مردودات المشتريات النقدية:</label>
+                                                    <div id="totalCashReturns" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label class="block font-bold text-sm mb-1">صافي المشتريات النقدية:</label>
+                                                    <div id="netCashPurchases" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded font-bold">0.00</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-white dark:bg-gray-600 p-4 rounded shadow">
+                                            <h5 class="text-md font-bold mb-3">إجمالي السداد</h5>
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label class="block text-sm mb-1">إجمالي سندات الصرف النقدي:</label>
+                                                    <div id="totalCashPayments" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-sm mb-1">إجمالي سندات الصرف بالشيك:</label>
+                                                    <div id="totalCheckPayments" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label class="block font-bold text-sm mb-1">إجمالي الدفعات:</label>
+                                                    <div id="totalPayments" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded font-bold">0.00</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-white dark:bg-gray-600 p-4 rounded shadow">
+                                            <h5 class="text-md font-bold mb-3">العمولات المحتسبة (10%)</h5>
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label class="block text-sm mb-1">العمولة من صافي المشتريات:</label>
+                                                    <div id="commissionFromPurchases" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-sm mb-1">العمولة من إجمالي السداد:</label>
+                                                    <div id="commissionFromPayments" class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 rounded">0.00</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Footer Section -->
+        <footer class="bg-secondary text-white p-4 text-center no-print">
+            <p>&copy; 2025 جميع الحقوق محفوظة للسروري</p>
+        </footer>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // Check for dark mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+        
+        // DOM Elements
+        const treeToggles = document.querySelectorAll('.tree-toggle');
+        const screenLinks = document.querySelectorAll('[data-screen]');
+        const contentArea = document.getElementById('content-area');
+        
+        // Default Document Types and Patterns
+        const DEFAULT_DOC_TYPES = [
+            {
+                type: 'رصيد افتتاحي',
+                keywords: 'الرصيد الإفتتــاحي,رصيد افتتاحي,الرصيد الافتتاحي,الرصيد الأول,رصيد أول المدة,رصيد اول'
+            },
+            {
+                type: 'فاتورة تعويض مجانيه',
+                keywords: 'فاتورة تعويض رقم,فاتورة تعويض مجانيه,فاتورة تعويض,تعويض مجان,بضاعة مجانية,تعويض عن,فاتورة مجانية'
+            },
+            {
+                type: 'فاتورة مشترات آجله',
+                keywords: 'لكم فاتورة مشتروات آجلة رقم,لكم فاتورة مشتريات آجلة,فاتورة مشتريات اجل,لكم فاتورة مشتريات اجله,مشتريات آجلة,فاتورة آجل,مشترات آجل,فاتورة مشتريات بالأجل'
+            },
+            {
+                type: 'فاتورة مشتريات نقدية',
+                keywords: 'فاتورة مشتروات نقديةرقم,فاتورة مشتريات نقدية رقم,فاتورة مشتريات نقدي,مشتريات نقد,مشتريات كاش,فاتورة نقد,مشتريات نقدية'
+            },
+            {
+                type: 'سند صرف نقدي',
+                keywords: 'عليكم أمر صرف نقدي رقم,عليكم امر صرف نقدي رقم,امر صرف نقدي,سند صرف نقد,صرف نقد,دفع نقدي,نقدية للمورد,سداد نقدي,دفعة نقدية,تحويل نقدي,أمر صرف نقدي رقم'
+            },
+            {
+                type: 'مرود مشتريات اجل',
+                keywords: 'عليكم مردودمشتروات رقم,مردود مشتريات رقم,مرتجع مشتريات,ارتجاع مشتريات,مردود مشتريات اجل,مرتجع مشتروات,مردودات مشتريات,ارجاع مشتريات,مرجوع مشتريات,مردودمشتروات رقم'
+            },
+            {
+                type: 'سند صرف شيك',
+                keywords: 'أمر صرف شيكات رقم,امر صرف شيك,سند صرف شيك,دفع شيك,شيك رقم,شيك بنكي,شيك مسحوب,دفعة بشيك,سداد شيك,دفع بشيك'
+            },
+            {
+                type: 'قيد يومية',
+                keywords: 'قيد يومية,قيد محاسبي,سند قيد,قيد تسوية,قيد اليومية,قيد عام,قيد تعديل,قيد تصحيح,قيد التسويات رقم,قيد فروق,قيد اليومية العامة'
+            },
+            {
+                type: 'قيد فارق عملة',
+                keywords: 'قيد فروق العملة,فرق العملة,قيد فارق عملة'
+            },
+            {
+                type: 'عمولة نقدية',
+                keywords: 'إشعار خصم رقم,اشعار خصم,عمولة نقدية,خصم عمولة'
+            },
+            {
+                type: 'اشعار مدين',
+                keywords: 'اشعار مدين رقم,إشعار مدين,اشعار خصم,خصم على المورد,مدين بقيمة,خصم مورد'
+            },
+            {
+                type: 'اشعار دائن',
+                keywords: 'اشعار دائن رقم,إشعار دائن,اشعار اضافه,إشعار اضافة,اضافة رصيد,إضافة للمورد'
+            },
+            {
+                type: 'مرتجع مشتريات نقدية',
+                keywords: 'مرتجع مشتريات نقدية,ارتجاع مشتريات نقدية,مردود نقدي,ارجاع نقدي'
+            }
+        ];
+        
+        // Utility Functions for localStorage
+        const SupplierStorage = {
+            saveSuppliers: function(suppliers) {
+                try {
+                    localStorage.setItem('suppliers', JSON.stringify(suppliers));
+                    return true;
+                } catch (error) {
+                    console.error("Error saving suppliers data:", error);
+                    return false;
+                }
+            },
+            getSuppliers: function() {
+                try {
+                    const suppliers = localStorage.getItem('suppliers');
+                    return suppliers ? JSON.parse(suppliers) : [];
+                } catch (error) {
+                    console.error("Error retrieving suppliers data:", error);
+                    return [];
+                }
+            },
+            saveStatements: function(supplierId, statements) {
+                try {
+                    localStorage.setItem(`statements_${supplierId}`, JSON.stringify(statements));
+                    return true;
+                } catch (error) {
+                    console.error(`Error saving statements for supplier ${supplierId}:`, error);
+                    return false;
+                }
+            },
+            getStatements: function(supplierId) {
+                try {
+                    const statements = localStorage.getItem(`statements_${supplierId}`);
+                    return statements ? JSON.parse(statements) : [];
+                } catch (error) {
+                    console.error(`Error retrieving statements for supplier ${supplierId}:`, error);
+                    return [];
+                }
+            },
+            saveUnpostedTransactions: function(supplierId, transactions) {
+                try {
+                    localStorage.setItem(`unposted_${supplierId}`, JSON.stringify(transactions));
+                    return true;
+                } catch (error) {
+                    console.error(`Error saving unposted transactions for supplier ${supplierId}:`, error);
+                    return false;
+                }
+            },
+            getUnpostedTransactions: function(supplierId) {
+                try {
+                    const transactions = localStorage.getItem(`unposted_${supplierId}`);
+                    return transactions ? JSON.parse(transactions) : [];
+                } catch (error) {
+                    console.error(`Error retrieving unposted transactions for supplier ${supplierId}:`, error);
+                    return [];
+                }
+            },
+            saveMatchingData: function(supplierId, matchingData) {
+                try {
+                    localStorage.setItem(`matching_${supplierId}`, JSON.stringify(matchingData));
+                    return true;
+                } catch (error) {
+                    console.error(`Error saving matching data for supplier ${supplierId}:`, error);
+                    return false;
+                }
+            },
+            getMatchingData: function(supplierId) {
+                try {
+                    const matchingData = localStorage.getItem(`matching_${supplierId}`);
+                    return matchingData ? JSON.parse(matchingData) : [];
+                } catch (error) {
+                    console.error(`Error retrieving matching data for supplier ${supplierId}:`, error);
+                    return [];
+                }
+            },
+            saveCommissionData: function(supplierId, commissionData) {
+                try {
+                    localStorage.setItem(`commission_${supplierId}`, JSON.stringify(commissionData));
+                    return true;
+                } catch (error) {
+                    console.error(`Error saving commission data for supplier ${supplierId}:`, error);
+                    return false;
+                }
+            },
+            getCommissionData: function(supplierId) {
+                try {
+                    const commissionData = localStorage.getItem(`commission_${supplierId}`);
+                    return commissionData ? JSON.parse(commissionData) : [];
+                } catch (error) {
+                    console.error(`Error retrieving commission data for supplier ${supplierId}:`, error);
+                    return [];
+                }
+            },
+            saveCompanyInfo: function(companyInfo) {
+                try {
+                    localStorage.setItem('companyInfo', JSON.stringify(companyInfo));
+                    return true;
+                } catch (error) {
+                    console.error("Error saving company info:", error);
+                    return false;
+                }
+            },
+            getCompanyInfo: function() {
+                try {
+                    const companyInfo = localStorage.getItem('companyInfo');
+                    return companyInfo ? JSON.parse(companyInfo) : {
+                        nameAr: '',
+                        nameEn: '',
+                        branch: '',
+                        address: '',
+                        mobile: '',
+                        whatsapp: '',
+                        phone: '',
+                        email: '',
+                        logo: '',
+                        logoSize: 80
+                    };
+                } catch (error) {
+                    console.error("Error retrieving company info:", error);
+                    return {
+                        nameAr: '',
+                        nameEn: '',
+                        branch: '',
+                        address: '',
+                        mobile: '',
+                        whatsapp: '',
+                        phone: '',
+                        email: '',
+                        logo: '',
+                        logoSize: 80
+                    };
+                }
+            },
+            saveSystemSettings: function(settings) {
+                try {
+                    localStorage.setItem('systemSettings', JSON.stringify(settings));
+                    return true;
+                } catch (error) {
+                    console.error("Error saving system settings:", error);
+                    return false;
+                }
+            },
+            getSystemSettings: function() {
+                try {
+                    const settings = localStorage.getItem('systemSettings');
+                    return settings ? JSON.parse(settings) : {
+                        name: 'نظام إدارة الموردين',
+                        version: '1.3'
+                    };
+                } catch (error) {
+                    console.error("Error retrieving system settings:", error);
+                    return {
+                        name: 'نظام إدارة الموردين',
+                        version: '1.3'
+                    };
+                }
+            },
+            saveRegionalSettings: function(settings) {
+                try {
+                    localStorage.setItem('regionalSettings', JSON.stringify(settings));
+                    return true;
+                } catch (error) {
+                    console.error("Error saving regional settings:", error);
+                    return false;
+                }
+            },
+            getRegionalSettings: function() {
+                try {
+                    const settings = localStorage.getItem('regionalSettings');
+                    return settings ? JSON.parse(settings) : {
+                        currency: 'YER',
+                        numberFormat: 'comma',
+                        allowNegative: true
+                    };
+                } catch (error) {
+                    console.error("Error retrieving regional settings:", error);
+                    return {
+                        currency: 'YER',
+                        numberFormat: 'comma',
+                        allowNegative: true
+                    };
+                }
+            },
+            // جديد: حفظ واسترجاع إعدادات العمولة للموردين
+            saveCommissionSetup: function(supplierId, setupData) {
+                try {
+                    localStorage.setItem(`commission_setup_${supplierId}`, JSON.stringify(setupData));
+                    return true;
+                } catch (error) {
+                    console.error(`Error saving commission setup for supplier ${supplierId}:`, error);
+                    return false;
+                }
+            },
+            getCommissionSetup: function(supplierId) {
+                try {
+                    const setupData = localStorage.getItem(`commission_setup_${supplierId}`);
+                    if (setupData) {
+                        return JSON.parse(setupData);
+                    } else {
+                        // القيم الافتراضية إذا لم تكن هناك إعدادات محفوظة
+                        return {
+                            defaultType: 'cash',
+                            defaultPercentage: 10,
+                            defaultBasis: 'purchases',
+                            docTypes: []
+                        };
+                    }
+                } catch (error) {
+                    console.error(`Error retrieving commission setup for supplier ${supplierId}:`, error);
+                    return {
+                        defaultType: 'cash',
+                        defaultPercentage: 10,
+                        defaultBasis: 'purchases',
+                        docTypes: []
+                    };
+                }
+            },
+            getNextStatementNumber: function() {
+                try {
+                    let number = parseInt(localStorage.getItem('statementNumber') || '0');
+                    number++;
+                    localStorage.setItem('statementNumber', number.toString());
+                    return number;
+                } catch (error) {
+                    console.error("Error generating next statement number:", error);
+                    return new Date().getTime(); // Fallback to timestamp if localStorage fails
+                }
+            },
+            getCurrentStatementNumber: function() {
+                try {
+                    return parseInt(localStorage.getItem('statementNumber') || '0');
+                } catch (error) {
+                    console.error("Error retrieving current statement number:", error);
+                    return 0;
+                }
+            },
+            // New function to store statement details with date
+            saveStatementInfo: function(statementNumber, supplierId, date, recordCount) {
+                try {
+                    const statementInfo = {
+                        number: statementNumber,
+                        supplierId: supplierId,
+                        date: date,
+                        recordCount: recordCount,
+                        createdAt: new Date().toISOString()
+                    };
+                    
+                    // Get existing statement records
+                    let statements = JSON.parse(localStorage.getItem('statementRecords') || '[]');
+                    statements.push(statementInfo);
+                    
+                    // Store back to localStorage
+                    localStorage.setItem('statementRecords', JSON.stringify(statements));
+                    return true;
+                } catch (error) {
+                    console.error("Error saving statement info:", error);
+                    return false;
+                }
+            },
+            // Get all statement records
+            getAllStatementRecords: function() {
+                try {
+                    return JSON.parse(localStorage.getItem('statementRecords') || '[]');
+                } catch (error) {
+                    console.error("Error retrieving statement records:", error);
+                    return [];
+                }
+            },
+            // حفظ أنواع المستندات المخصصة
+            saveDocumentTypes: function(docTypes) {
+                try {
+                    localStorage.setItem('documentTypes', JSON.stringify(docTypes));
+                    return true;
+                } catch (error) {
+                    console.error("Error saving document types:", error);
+                    return false;
+                }
+            },
+            // استرجاع أنواع المستندات المخصصة
+            getDocumentTypes: function() {
+                try {
+                    const docTypes = localStorage.getItem('documentTypes');
+                    return docTypes ? JSON.parse(docTypes) : DEFAULT_DOC_TYPES;
+                } catch (error) {
+                    console.error("Error retrieving document types:", error);
+                    return DEFAULT_DOC_TYPES;
+                }
+            }
+        };
+        
+        // Format number based on regional settings
+        function formatNumber(number) {
+            const settings = SupplierStorage.getRegionalSettings();
+            if (!settings.allowNegative && number < 0) {
+                number = 0;
+            }
+            
+            let formattedNumber;
+            switch(settings.numberFormat) {
+                case 'dot':
+                    formattedNumber = number.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    break;
+                case 'space':
+                    formattedNumber = number.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(',', '.');
+                    break;
+                case 'comma':
+                default:
+                    formattedNumber = number.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    break;
+            }
+            
+            return formattedNumber;
+        }
+        
+        // Display currency and number with formatting
+        function formatCurrency(number) {
+            const settings = SupplierStorage.getRegionalSettings();
+            return `${formatNumber(number)} ${settings.currency}`;
+        }
+        
+        // أنواع المستندات وتعريفاتها
+        function loadDocumentTypes() {
+            return SupplierStorage.getDocumentTypes();
+        }
+        
+        // Detect document type from description based on the document types database
+        function detectDocumentType(description) {
+            if (!description) return '';
+            
+            description = description.trim().toLowerCase();
+            
+            // Get current document types definitions
+            const docTypes = loadDocumentTypes();
+            
+            // Check for each document type
+            for (const docType of docTypes) {
+                const keywords = docType.keywords.split(',');
+                for (const keyword of keywords) {
+                    if (keyword && description.includes(keyword.trim().toLowerCase())) {
+                        return docType.type;
+                    }
+                }
+            }
+            
+            // Default if no match found
+            return 'أخرى';
+        }
+        
+        // Parse date string to a standard format for consistent comparison
+        function parseArabicDate(dateStr) {
+            if (!dateStr) return null;
+            
+            // Handle various date formats
+            let dateParts;
+            let year, month, day;
+            
+            try {
+                if (dateStr.includes('/')) {
+                    // Format DD/MM/YYYY or similar
+                    dateParts = dateStr.split('/');
+                    if (dateParts.length === 3) {
+                        if (dateParts[2].length === 2) {
+                            year = parseInt('20' + dateParts[2]);
+                        } else {
+                            year = parseInt(dateParts[2]);
+                        }
+                        
+                        // Check which part is day and which is month based on typical ranges
+                        if (parseInt(dateParts[0]) > 12) {
+                            day = parseInt(dateParts[0]);
+                            month = parseInt(dateParts[1]);
+                        } else if (parseInt(dateParts[1]) > 12) {
+                            day = parseInt(dateParts[1]);
+                            month = parseInt(dateParts[0]);
+                        } else {
+                            // Default to DD/MM/YYYY for Arabic date format
+                            day = parseInt(dateParts[0]);
+                            month = parseInt(dateParts[1]);
+                        }
+                    } else {
+                        return null;
+                    }
+                } else if (dateStr.includes('-')) {
+                    // Format YYYY-MM-DD or DD-MM-YYYY
+                    dateParts = dateStr.split('-');
+                    if (dateParts.length === 3) {
+                        if (dateParts[0].length === 4) {
+                            // YYYY-MM-DD
+                            year = parseInt(dateParts[0]);
+                            month = parseInt(dateParts[1]);
+                            day = parseInt(dateParts[2]);
+                        } else {
+                            // DD-MM-YYYY
+                            if (dateParts[2].length === 2) {
+                                year = parseInt('20' + dateParts[2]);
+                            } else {
+                                year = parseInt(dateParts[2]);
+                            }
+                            
+                            // Check which part is day and which is month
+                            if (parseInt(dateParts[0]) > 12) {
+                                day = parseInt(dateParts[0]);
+                                month = parseInt(dateParts[1]);
+                            } else if (parseInt(dateParts[1]) > 12) {
+                                day = parseInt(dateParts[1]);
+                                month = parseInt(dateParts[0]);
+                            } else {
+                                // Default to DD-MM-YYYY for Arabic date format
+                                day = parseInt(dateParts[0]);
+                                month = parseInt(dateParts[1]);
+                            }
+                        }
+                    } else {
+                        return null;
+                    }
+                } else {
+                    // Try to parse as ISO date
+                    const date = new Date(dateStr);
+                    if (!isNaN(date.getTime())) {
+                        return date;
+                    }
+                    return null;
+                }
+                
+                // Create a date object
+                const date = new Date(year, month - 1, day);
+                
+                // Validate the date (to catch invalid dates like 31/04)
+                if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+                    return null; // Invalid date
+                }
+                
+                return date;
+            } catch (error) {
+                console.error("Error parsing date:", error);
+                return null;
+            }
+        }
+        
+        // Filter statements by date range
+        function filterStatementsByDate(statements, fromDate, toDate) {
+            if (!fromDate || !toDate) return statements;
+            
+            const fromDateObj = new Date(fromDate);
+            const toDateObj = new Date(toDate);
+            toDateObj.setHours(23, 59, 59, 999); // Include the end date fully
+            
+            return statements.filter(statement => {
+                const statementDate = parseArabicDate(statement.date);
+                if (!statementDate) return false;
+                
+                return statementDate >= fromDateObj && statementDate <= toDateObj;
+            });
+        }
+        
+        // Initialize Tree Navigation
+        function initializeTreeNavigation() {
+            treeToggles.forEach(toggle => {
+                toggle.addEventListener('click', () => {
+                    const treeView = toggle.parentElement;
+                    treeView.classList.toggle('active');
+                });
+            });
+        }
+        
+        // Initialize Screen Navigation
+        function initializeScreenNavigation() {
+            screenLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    const screenId = link.dataset.screen;
+                    showScreen(screenId);
+                });
+            });
+        }
+        
+        // Show Screen Function
+        function showScreen(screenId) {
+            // Hide all screens
+            document.querySelectorAll('.screen-content').forEach(screen => {
+                screen.classList.add('hidden');
+            });
+            
+            // Hide welcome screen
+            document.getElementById('welcome-screen').classList.add('hidden');
+            
+            // Show selected screen
+            const screen = document.getElementById(screenId);
+            if (screen) {
+                screen.classList.remove('hidden');
+                
+                // Load specific screen content
+                if (screenId === 'document-types-settings') {
+                    loadDocTypesSettings();
+                } else if (screenId === 'supplier-data') {
+                    loadSuppliersTable();
+                } else if (screenId === 'matching-report' || screenId === 'commission-report') {
+                    loadDocTypeSelects();
+                } else if (screenId === 'account-statements') {
+                    const viewStatementSupplier = document.getElementById('viewStatementSupplier');
+                    if (viewStatementSupplier.value) {
+                        loadStatements(viewStatementSupplier.value);
+                    }
+                } else if (screenId === 'commission-setup') {
+                    loadCommissionSetupScreen();
+                } else if (screenId === 'match-statements') {
+                    const matchSupplier = document.getElementById('matchSupplier');
+                    if (matchSupplier.value) {
+                        loadMatchingOperations(matchSupplier.value);
+                    }
+                }
+            }
+        }
+        
+        // Load Document Types Settings
+        function loadDocTypesSettings() {
+            const docTypes = loadDocumentTypes();
+            const tableBody = document.getElementById('docTypesTableBody');
+            
+            if (!tableBody) return;
+            
+            tableBody.innerHTML = '';
+            
+            docTypes.forEach((docType, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${docType.type}</td>
+                    <td>${docType.keywords}</td>
+                    <td>
+                        <button class="edit-doctype bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 mr-1"
+                                data-index="${index}">تعديل</button>
+                        <button class="delete-doctype bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                                data-index="${index}">حذف</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // Add event listeners to edit and delete buttons
+            document.querySelectorAll('.edit-doctype').forEach(button => {
+                button.addEventListener('click', function() {
+                    const index = parseInt(this.dataset.index);
+                    editDocType(index);
+                });
+            });
+            
+            document.querySelectorAll('.delete-doctype').forEach(button => {
+                button.addEventListener('click', function() {
+                    const index = parseInt(this.dataset.index);
+                    deleteDocType(index);
+                });
+            });
+        }
+        
+        // Edit Document Type
+        function editDocType(index) {
+            const docTypes = loadDocumentTypes();
+            const docType = docTypes[index];
+            
+            // Create a modal dialog for editing
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-lg">
+                    <h3 class="text-xl font-bold text-secondary mb-4">تعديل نوع المستند</h3>
+                    <div class="grid grid-cols-1 gap-4">
+                        <div>
+                            <label class="block mb-2 font-bold">نوع المستند</label>
+                            <input type="text" id="edit-doctype-name" value="${docType.type}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">الكلمات المفتاحية (مفصولة بفواصل)</label>
+                            <textarea id="edit-doctype-keywords" class="w-full p-2 border border-gray-300 rounded text-base" rows="4">${docType.keywords}</textarea>
+                        </div>
+                    </div>
+                    <div class="flex justify-end mt-4">
+                        <button id="cancel-edit-doctype" class="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 mr-2">إلغاء</button>
+                        <button id="save-edit-doctype" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Handle cancel
+            document.getElementById('cancel-edit-doctype').addEventListener('click', function() {
+                document.body.removeChild(modal);
+            });
+            
+            // Handle save
+            document.getElementById('save-edit-doctype').addEventListener('click', function() {
+                const name = document.getElementById('edit-doctype-name').value;
+                const keywords = document.getElementById('edit-doctype-keywords').value;
+                
+                if (!name || !keywords) {
+                    alert('الرجاء إدخال نوع المستند والكلمات المفتاحية');
+                    return;
+                }
+                
+                docTypes[index] = {
+                    type: name,
+                    keywords: keywords
+                };
+                
+                SupplierStorage.saveDocumentTypes(docTypes);
+                loadDocTypesSettings();
+                loadDocTypeSelects();
+                
+                document.body.removeChild(modal);
+                alert('تم تحديث نوع المستند بنجاح');
+            });
+        }
+        
+        // Delete Document Type
+        function deleteDocType(index) {
+            if (confirm('هل أنت متأكد من حذف نوع المستند هذا؟')) {
+                const docTypes = loadDocumentTypes();
+                docTypes.splice(index, 1);
+                SupplierStorage.saveDocumentTypes(docTypes);
+                loadDocTypesSettings();
+                loadDocTypeSelects();
+                alert('تم حذف نوع المستند بنجاح');
+            }
+        }
+        
+        // Load Document Types into Select elements
+        function loadDocTypeSelects() {
+            const docTypes = loadDocumentTypes();
+            const selectElements = [
+                document.getElementById('matchingReportDocType'),
+                document.getElementById('commissionReportDocType')
+            ];
+            
+            selectElements.forEach(select => {
+                if (!select) return;
+                
+                // Clear all options except the first one
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+                
+                // Add document types
+                docTypes.forEach(docType => {
+                    const option = document.createElement('option');
+                    option.value = docType.type;
+                    option.textContent = docType.type;
+                    select.appendChild(option);
+                });
+            });
+        }
+        
+        // Function to update header info
+        function updateHeaderInfo(companyInfo) {
+            const companyInfoDisplay = document.getElementById('companyInfoDisplay');
+            if (!companyInfoDisplay) return;
+            
+            companyInfoDisplay.innerHTML = `
+                <div class="text-sm">
+                    <div class="font-bold">${companyInfo.nameAr || 'الشركة'}</div>
+                    <div>${companyInfo.branch ? 'فرع: ' + companyInfo.branch : ''}</div>
+                </div>
+            `;
+        }
+        
+        // Load Suppliers Table
+        function loadSuppliersTable() {
+            const suppliers = SupplierStorage.getSuppliers();
+            const tableBody = document.getElementById('suppliersTableBody');
+            
+            if (!tableBody) return;
+            
+            if (suppliers.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-4">لا توجد بيانات متاحة</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = '';
+            
+            suppliers.forEach(supplier => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${supplier.id}</td>
+                    <td>${supplier.name}</td>
+                    <td>${supplier.address || ''}</td>
+                    <td>${supplier.phone1 || ''}</td>
+                    <td>${supplier.fax || ''}</td>
+                    <td>${supplier.reference || ''}</td>
+                    <td>
+                        <button class="edit-supplier bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 mr-1"
+                                data-id="${supplier.id}">تعديل</button>
+                        <button class="delete-supplier bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                                data-id="${supplier.id}">حذف</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // Add event listeners to edit and delete buttons
+            document.querySelectorAll('.edit-supplier').forEach(button => {
+                button.addEventListener('click', function() {
+                    const supplierId = this.dataset.id;
+                    editSupplier(supplierId);
+                });
+            });
+            
+            document.querySelectorAll('.delete-supplier').forEach(button => {
+                button.addEventListener('click', function() {
+                    const supplierId = this.dataset.id;
+                    deleteSupplier(supplierId);
+                });
+            });
+        }
+        
+        // Edit Supplier
+        function editSupplier(supplierId) {
+            const suppliers = SupplierStorage.getSuppliers();
+            const supplier = suppliers.find(s => s.id === supplierId);
+            
+            if (!supplier) {
+                alert('المورد غير موجود');
+                return;
+            }
+            
+            // Create a modal dialog for editing
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-lg">
+                    <h3 class="text-xl font-bold text-secondary mb-4">تعديل بيانات المورد</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block mb-2 font-bold">الكود</label>
+                            <input type="text" id="edit-id" value="${supplier.id}" class="w-full p-2 border border-gray-300 rounded text-base" readonly>
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">اسم المورد</label>
+                            <input type="text" id="edit-name" value="${supplier.name}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">العنوان</label>
+                            <input type="text" id="edit-address" value="${supplier.address || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">تلفون 1</label>
+                            <input type="text" id="edit-phone1" value="${supplier.phone1 || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">تلفون 2</label>
+                            <input type="text" id="edit-phone2" value="${supplier.phone2 || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">فاكس</label>
+                            <input type="text" id="edit-fax" value="${supplier.fax || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">الحساب</label>
+                            <input type="text" id="edit-account" value="${supplier.account || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                        <div>
+                            <label class="block mb-2 font-bold">الحساب المرجع</label>
+                            <input type="text" id="edit-reference" value="${supplier.reference || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                        </div>
+                    </div>
+                    <div class="flex justify-end mt-4">
+                        <button id="cancel-edit" class="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 mr-2">إلغاء</button>
+                        <button id="save-edit" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">حفظ</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Handle cancel
+            document.getElementById('cancel-edit').addEventListener('click', function() {
+                document.body.removeChild(modal);
+            });
+            
+            // Handle save
+            document.getElementById('save-edit').addEventListener('click', function() {
+                const updatedSupplier = {
+                    id: document.getElementById('edit-id').value,
+                    name: document.getElementById('edit-name').value,
+                    address: document.getElementById('edit-address').value,
+                    phone1: document.getElementById('edit-phone1').value,
+                    phone2: document.getElementById('edit-phone2').value,
+                    fax: document.getElementById('edit-fax').value,
+                    account: document.getElementById('edit-account').value,
+                    reference: document.getElementById('edit-reference').value
+                };
+                
+                const suppliers = SupplierStorage.getSuppliers();
+                const index = suppliers.findIndex(s => s.id === supplierId);
+                
+                if (index !== -1) {
+                    suppliers[index] = updatedSupplier;
+                    SupplierStorage.saveSuppliers(suppliers);
+                    loadSuppliersTable();
+                    loadSuppliersInDropdowns();
+                    alert('تم تحديث بيانات المورد بنجاح');
+                }
+                
+                document.body.removeChild(modal);
+            });
+        }
+        
+        // Delete Supplier
+        function deleteSupplier(supplierId) {
+            if (confirm('هل أنت متأكد من حذف هذا المورد؟')) {
+                const suppliers = SupplierStorage.getSuppliers();
+                const updatedSuppliers = suppliers.filter(s => s.id !== supplierId);
+                
+                SupplierStorage.saveSuppliers(updatedSuppliers);
+                loadSuppliersTable();
+                loadSuppliersInDropdowns();
+                
+                // Also remove related data
+                localStorage.removeItem(`statements_${supplierId}`);
+                localStorage.removeItem(`matching_${supplierId}`);
+                localStorage.removeItem(`commission_${supplierId}`);
+                localStorage.removeItem(`unposted_${supplierId}`);
+                localStorage.removeItem(`commission_setup_${supplierId}`);
+                
+                alert('تم حذف المورد بنجاح');
+            }
+        }
+        
+        // Load Suppliers in Dropdowns
+        function loadSuppliersInDropdowns() {
+            const suppliers = SupplierStorage.getSuppliers();
+            const dropdowns = [
+                document.getElementById('statementSupplier'),
+                document.getElementById('viewStatementSupplier'),
+                document.getElementById('matchSupplier'),
+                document.getElementById('unpostedSupplier'),
+                document.getElementById('commissionSupplier'),
+                document.getElementById('matchingReportSupplier'),
+                document.getElementById('commissionReportSupplier'),
+                document.getElementById('financialMetricsSupplier'),
+                document.getElementById('commissionSetupSupplier')
+            ];
+            
+            dropdowns.forEach(dropdown => {
+                if (!dropdown) return;
+                
+                // Clear dropdown except first option
+                while (dropdown.options.length > 1) {
+                    dropdown.remove(1);
+                }
+                
+                // Add suppliers
+                suppliers.forEach(supplier => {
+                    const option = document.createElement('option');
+                    option.value = supplier.id;
+                    option.textContent = `${supplier.name} (${supplier.id})`;
+                    dropdown.appendChild(option);
+                });
+            });
+        }
+        
+        // Load Statements
+        function loadStatements(supplierId) {
+            const statements = SupplierStorage.getStatements(supplierId);
+            const tableBody = document.getElementById('statementsTableBody');
+            
+            if (!tableBody) return;
+            
+            if (statements.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="text-center py-4">لا توجد بيانات متاحة</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = '';
+            
+            statements.forEach(statement => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${statement.branch}</td>
+                    <td>${statement.date}</td>
+                    <td>${statement.docNo}</td>
+                    <td>${statement.docType || ''}</td>
+                    <td>${statement.description}</td>
+                    <td>${formatNumber(statement.remainingValue)}</td>
+                    <td>${formatNumber(statement.debit)}</td>
+                    <td>${formatNumber(statement.credit)}</td>
+                    <td>${formatNumber(statement.balance)}</td>
+                    <td>
+                        <button class="delete-statement bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                                data-id="${statement.id}">حذف</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // Add event listeners to delete buttons
+            document.querySelectorAll('.delete-statement').forEach(button => {
+                button.addEventListener('click', function() {
+                    const statementId = this.dataset.id;
+                    deleteStatement(supplierId, statementId);
+                });
+            });
+        }
+        
+        // Delete Statement
+        function deleteStatement(supplierId, statementId) {
+            if (confirm('هل أنت متأكد من حذف هذا السجل؟')) {
+                const statements = SupplierStorage.getStatements(supplierId);
+                const updatedStatements = statements.filter(s => s.id !== statementId);
+                
+                // Recalculate balances if necessary
+                if (updatedStatements.length > 0) {
+                    let balance = 0;
+                    updatedStatements.forEach((statement, index) => {
+                        balance = balance + statement.debit - statement.credit;
+                        statement.balance = balance;
+                        statement.id = index.toString(); // Reassign IDs
+                    });
+                }
+                
+                SupplierStorage.saveStatements(supplierId, updatedStatements);
+                
+                // Also update related matching and commission data
+                const matchingData = SupplierStorage.getMatchingData(supplierId);
+                const updatedMatchingData = matchingData.filter(m => m.statementId !== statementId);
+                SupplierStorage.saveMatchingData(supplierId, updatedMatchingData);
+                
+                const commissionData = SupplierStorage.getCommissionData(supplierId);
+                const updatedCommissionData = commissionData.filter(c => !c.statementId || c.statementId !== statementId);
+                SupplierStorage.saveCommissionData(supplierId, updatedCommissionData);
+                
+                // Reload the statements table
+                loadStatements(supplierId);
+                
+                alert('تم حذف السجل بنجاح');
+            }
+        }
+        
+        // Process imported statements
+        function processImportedStatements(supplierId, statements) {
+            // Transform to our data structure
+            const transformedStatements = statements.map((row, index) => {
+                // Get values based on possible variations of column names
+                const branch = row['الفرع'] || row['فرع'] || '';
+                const date = row['التــــــاريخ'] || row['التاريخ'] || row['تاريخ'];
+                const docNo = row['رقم المستند'] || row['المستند'] || row['رقم'];
+                const description = row['البيــــــــــــــــــــــــــــــــــــــــــان'] || row['البيان'] || row['الوصف'];
+                const remainingValue = row['قيمة البضاعة المتبقية'] || row['القيمة المتبقية'] || 0;
+                const debit = row['مـــديــــن'] || row['مدين'] || 0;
+                const credit = row['دائــــــن'] || row['دائن'] || 0;
+                const balance = row['الرصــيد'] || row['الرصيد'] || 0;
+                
+                // Detect document type
+                const docType = detectDocumentType(description);
+                
+                // Convert string values to numbers where needed
+                const numRemainingValue = typeof remainingValue === 'string' 
+                    ? parseFloat(remainingValue.replace(/,/g, '')) 
+                    : remainingValue;
+                    
+                const numDebit = typeof debit === 'string' 
+                    ? parseFloat(debit.replace(/,/g, '')) 
+                    : debit;
+                    
+                const numCredit = typeof credit === 'string' 
+                    ? parseFloat(credit.replace(/,/g, '')) 
+                    : credit;
+                    
+                const numBalance = typeof balance === 'string' 
+                    ? parseFloat(balance.replace(/,/g, '')) 
+                    : balance;
+                
+                return {
+                    id: index.toString(),
+                    branch: branch || '',
+                    date: date || '',
+                    docNo: docNo || '',
+                    docType: docType,
+                    description: description || '',
+                    remainingValue: numRemainingValue || 0,
+                    debit: numDebit || 0,
+                    credit: numCredit || 0,
+                    balance: numBalance || 0
+                };
+            });
+            
+            // Generate a statement number
+            const statementNumber = SupplierStorage.getNextStatementNumber();
+            
+            // Save statement info with date and record count
+            SupplierStorage.saveStatementInfo(
+                statementNumber, 
+                supplierId, 
+                new Date().toLocaleDateString('ar-SA'), 
+                transformedStatements.length
+            );
+            
+            // Save to localStorage
+            SupplierStorage.saveStatements(supplierId, transformedStatements);
+            
+            alert(`تم استيراد ${transformedStatements.length} عملية بنجاح | رقم الكشف: ${statementNumber}`);
+            
+            // Update UI if current view statement supplier is the same
+            const viewStatementSupplier = document.getElementById('viewStatementSupplier');
+            if (viewStatementSupplier.value === supplierId) {
+                loadStatements(supplierId);
+            }
+        }
+        
+        // Prompt to fill empty fields
+        function promptFillEmptyFields(supplierId, statements) {
+            const companyInfo = SupplierStorage.getCompanyInfo();
+            
+            // Create modal dialog
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-lg">
+                    <h3 class="text-xl font-bold text-secondary mb-4">تعبئة الحقول الفارغة</h3>
+                    <p class="mb-4">يوجد حقول فارغة في الملف المستورد. هل ترغب في تعبئتها تلقائيًا؟</p>
+                    
+                    <div class="mb-4">
+                        <label class="block mb-2 font-bold">الفرع</label>
+                        <input type="text" id="default-branch" value="${companyInfo.branch || ''}" class="w-full p-2 border border-gray-300 rounded text-base">
+                    </div>
+                    
+                    <div class="flex justify-end mt-4">
+                        <button id="cancel-fill" class="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 mr-2">إلغاء</button>
+                        <button id="continue-without-fill" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 mr-2">استمرار بدون تعبئة</button>
+                        <button id="fill-empty" class="bg-primary text-white px-4 py-2 rounded hover:bg-secondary">تعبئة الحقول الفارغة</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Handle cancel
+            document.getElementById('cancel-fill').addEventListener('click', function() {
+                document.body.removeChild(modal);
+            });
+            
+            // Continue without filling
+            document.getElementById('continue-without-fill').addEventListener('click', function() {
+                document.body.removeChild(modal);
+                processImportedStatements(supplierId, statements);
+            });
+            
+            // Fill empty fields
+            document.getElementById('fill-empty').addEventListener('click', function() {
+                const defaultBranch = document.getElementById('default-branch').value;
+                
+                // Fill empty fields
+                const filledStatements = statements.map(row => {
+                    const newRow = {...row};
+                    if (!newRow['الفرع'] || newRow['الفرع'] === '') {
+                        newRow['الفرع'] = defaultBranch;
+                    }
+                    return newRow;
+                });
+                
+                document.body.removeChild(modal);
+                processImportedStatements(supplierId, filledStatements);
+            });
+        }
+
+        // تحميل بيانات المطابقة للمورد
+        function loadMatchingOperations(supplierId) {
+            const statements = SupplierStorage.getStatements(supplierId);
+            const tableBody = document.getElementById('matchingTableBody');
+            
+            if (!tableBody) return;
+            
+            if (statements.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="11" class="text-center py-4">لا توجد بيانات متاحة لهذا المورد</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // الحصول على بيانات المطابقة المحفوظة مسبقًا (إن وجدت)
+            const savedMatchingData = SupplierStorage.getMatchingData(supplierId);
+            
+            tableBody.innerHTML = '';
+            
+            statements.forEach(statement => {
+                // البحث عن بيانات المطابقة للعملية الحالية
+                const matchingData = savedMatchingData.find(m => m.statementId === statement.id) || {
+                    status: 'matched', // القيمة الافتراضية: مطابق
+                    supplierAmount: statement.debit - statement.credit // المبلغ الافتراضي: نفس مبلغ العملية
+                };
+                
+                // حساب الفارق
+                const ourAmount = statement.debit - statement.credit;
+                const diff = ourAmount - matchingData.supplierAmount;
+                
+                // إضافة صف للجدول
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${statement.branch}</td>
+                    <td>${statement.date}</td>
+                    <td>${statement.docNo}</td>
+                    <td>${statement.docType || ''}</td>
+                    <td>${statement.description}</td>
+                    <td>${formatNumber(statement.debit)}</td>
+                    <td>${formatNumber(statement.credit)}</td>
+                    <td>${formatNumber(statement.balance)}</td>
+                    <td>
+                        <select class="matching-status w-full p-1 border border-gray-300 rounded text-sm" data-id="${statement.id}">
+                            <option value="matched" ${matchingData.status === 'matched' ? 'selected' : ''}>مطابق</option>
+                            <option value="unmatched" ${matchingData.status === 'unmatched' ? 'selected' : ''}>غير مطابق</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="number" class="supplier-amount w-full p-1 border border-gray-300 rounded text-sm" 
+                               data-id="${statement.id}" value="${matchingData.supplierAmount}">
+                    </td>
+                    <td class="${diff > 0 ? 'diff-positive' : diff < 0 ? 'diff-negative' : ''}">${formatNumber(diff)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // إضافة مستمعي الأحداث للحقول
+            document.querySelectorAll('.matching-status, .supplier-amount').forEach(element => {
+                element.addEventListener('change', function() {
+                    const statementId = this.dataset.id;
+                    updateDifference(supplierId, statementId);
+                });
+            });
+        }
+        
+        // تحديث الفرق عند تغيير مبلغ المورد أو حالة المطابقة
+        function updateDifference(supplierId, statementId) {
+            const statements = SupplierStorage.getStatements(supplierId);
+            const statement = statements.find(s => s.id === statementId);
+            
+            if (!statement) return;
+            
+            const statusElement = document.querySelector(`.matching-status[data-id="${statementId}"]`);
+            const amountElement = document.querySelector(`.supplier-amount[data-id="${statementId}"]`);
+            
+            if (!statusElement || !amountElement) return;
+            
+            const status = statusElement.value;
+            const supplierAmount = parseFloat(amountElement.value) || 0;
+            
+            // حساب الفرق
+            const ourAmount = statement.debit - statement.credit;
+            const diff = ourAmount - supplierAmount;
+            
+            // تحديث عرض الفرق
+            const row = amountElement.closest('tr');
+            const diffCell = row.querySelector('td:last-child');
+            
+            if (diffCell) {
+                diffCell.textContent = formatNumber(diff);
+                diffCell.className = diff > 0 ? 'diff-positive' : diff < 0 ? 'diff-negative' : '';
+            }
+        }
+        
+        // حفظ بيانات المطابقة
+        function saveMatchingData(supplierId) {
+            const matchingDataArray = [];
+            
+            document.querySelectorAll('.matching-status').forEach(statusElement => {
+                const statementId = statusElement.dataset.id;
+                const amountElement = document.querySelector(`.supplier-amount[data-id="${statementId}"]`);
+                
+                if (amountElement) {
+                    const status = statusElement.value;
+                    const supplierAmount = parseFloat(amountElement.value) || 0;
+                    
+                    matchingDataArray.push({
+                        statementId,
+                        status,
+                        supplierAmount
+                    });
+                }
+            });
+            
+            SupplierStorage.saveMatchingData(supplierId, matchingDataArray);
+            alert('تم حفظ بيانات المطابقة بنجاح');
+        }
+        
+        // تحميل شاشة ترميز عمولات الموردين
+        function loadCommissionSetupScreen() {
+            const supplierId = document.getElementById('commissionSetupSupplier').value;
+            if (!supplierId) {
+                // إذا لم يتم اختيار مورد، قم بتنظيف الجدول
+                const tableBody = document.getElementById('docCommissionTableBody');
+                if (tableBody) {
+                    tableBody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center py-4">يرجى اختيار مورد أولاً</td>
+                        </tr>
+                    `;
+                }
+                return;
+            }
+            
+            // استرجاع إعدادات العمولة للمورد
+            const commissionSetup = SupplierStorage.getCommissionSetup(supplierId);
+            
+            // تعيين القيم الافتراضية في النموذج
+            document.getElementById('defaultCommissionType').value = commissionSetup.defaultType || 'cash';
+            document.getElementById('defaultCommissionPercentage').value = commissionSetup.defaultPercentage || 10;
+            document.getElementById('defaultCommissionBasis').value = commissionSetup.defaultBasis || 'purchases';
+            
+            // تحميل أنواع المستندات في الجدول
+            const docTypes = loadDocumentTypes();
+            const tableBody = document.getElementById('docCommissionTableBody');
+            
+            if (!tableBody) return;
+            
+            tableBody.innerHTML = '';
+            
+            docTypes.forEach(docType => {
+                // البحث عن إعدادات هذا النوع من المستندات
+                const docSetup = commissionSetup.docTypes && commissionSetup.docTypes.find(d => d.type === docType.type);
+                
+                // القيم الافتراضية إذا لم تكن هناك إعدادات محفوظة
+                const enabled = docSetup ? docSetup.enabled : true;
+                const commissionType = docSetup ? docSetup.commissionType : commissionSetup.defaultType || 'cash';
+                const percentage = docSetup ? docSetup.percentage : commissionSetup.defaultPercentage || 10;
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${docType.type}</td>
+                    <td>
+                        <select class="commission-enabled w-full p-2 border border-gray-300 rounded text-base" data-type="${docType.type}">
+                            <option value="true" ${enabled ? 'selected' : ''}>نعم</option>
+                            <option value="false" ${!enabled ? 'selected' : ''}>لا</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select class="commission-type w-full p-2 border border-gray-300 rounded text-base" data-type="${docType.type}">
+                            <option value="cash" ${commissionType === 'cash' ? 'selected' : ''}>عمولة نقدية</option>
+                            <option value="kind" ${commissionType === 'kind' ? 'selected' : ''}>عمولة عينية</option>
+                            <option value="inclusive" ${commissionType === 'inclusive' ? 'selected' : ''}>شاملة العمولة</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="number" class="commission-percentage w-full p-2 border border-gray-300 rounded text-base" 
+                               data-type="${docType.type}" value="${percentage}" min="0" max="100" step="0.01">
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // حفظ إعدادات العمولة للمورد
+        function saveCommissionSetup(supplierId) {
+            if (!supplierId) {
+                alert('الرجاء اختيار مورد أولاً');
+                return;
+            }
+            
+            // جمع البيانات الافتراضية
+            const defaultType = document.getElementById('defaultCommissionType').value;
+            const defaultPercentage = parseFloat(document.getElementById('defaultCommissionPercentage').value) || 10;
+            const defaultBasis = document.getElementById('defaultCommissionBasis').value;
+            
+            // جمع بيانات أنواع المستندات
+            const docTypes = [];
+            document.querySelectorAll('.commission-enabled').forEach(enabledElement => {
+                const docType = enabledElement.dataset.type;
+                const typeElement = document.querySelector(`.commission-type[data-type="${docType}"]`);
+                const percentageElement = document.querySelector(`.commission-percentage[data-type="${docType}"]`);
+                
+                if (typeElement && percentageElement) {
+                    const enabled = enabledElement.value === 'true';
+                    const commissionType = typeElement.value;
+                    const percentage = parseFloat(percentageElement.value) || defaultPercentage;
+                    
+                    docTypes.push({
+                        type: docType,
+                        enabled,
+                        commissionType,
+                        percentage
+                    });
+                }
+            });
+            
+            // حفظ البيانات
+            const setupData = {
+                defaultType,
+                defaultPercentage,
+                defaultBasis,
+                docTypes
+            };
+            
+            SupplierStorage.saveCommissionSetup(supplierId, setupData);
+            alert('تم حفظ إعدادات العمولة بنجاح');
+        }
+        
+        // إعادة تعيين إعدادات العمولة إلى القيم الافتراضية
+        function resetCommissionSetup(supplierId) {
+            if (!supplierId) {
+                alert('الرجاء اختيار مورد أولاً');
+                return;
+            }
+            
+            if (confirm('هل أنت متأكد من إعادة تعيين إعدادات العمولة إلى القيم الافتراضية؟')) {
+                // إعدادات افتراضية جديدة
+                const defaultSetup = {
+                    defaultType: 'cash',
+                    defaultPercentage: 10,
+                    defaultBasis: 'purchases',
+                    docTypes: []
+                };
+                
+                SupplierStorage.saveCommissionSetup(supplierId, defaultSetup);
+                loadCommissionSetupScreen(); // إعادة تحميل الشاشة
+                alert('تم إعادة تعيين إعدادات العمولة بنجاح');
+            }
+        }
+        
+        // Initialize all event listeners
+        function initializeEventListeners() {
+            // Logo Size Slider Event
+            const logoSizeElement = document.getElementById('logoSize');
+            if (logoSizeElement) {
+                logoSizeElement.addEventListener('input', function() {
+                    const size = this.value;
+                    document.getElementById('logoSizeValue').textContent = `${size}%`;
+                });
+            }
+            
+            // Save Company Info
+            const saveCompanyInfoBtn = document.getElementById('saveCompanyInfo');
+            if (saveCompanyInfoBtn) {
+                saveCompanyInfoBtn.addEventListener('click', function() {
+                    // Get logo from display or from input file
+                    let logoSrc = '';
+                    const logoDisplay = document.getElementById('logoDisplay');
+                    if (logoDisplay) {
+                        const logoImg = logoDisplay.querySelector('img');
+                        if (logoImg) {
+                            logoSrc = logoImg.src;
+                        }
+                    }
+                    
+                    const companyInfo = {
+                        nameAr: document.getElementById('companyNameAr').value,
+                        nameEn: document.getElementById('companyNameEn').value,
+                        branch: document.getElementById('companyBranch').value,
+                        address: document.getElementById('companyAddress').value,
+                        mobile: document.getElementById('companyMobile').value,
+                        whatsapp: document.getElementById('companyWhatsapp').value,
+                        phone: document.getElementById('companyPhone').value,
+                        email: document.getElementById('companyEmail').value,
+                        logo: logoSrc,
+                        logoSize: parseInt(document.getElementById('logoSize').value)
+                    };
+                    
+                    try {
+                        SupplierStorage.saveCompanyInfo(companyInfo);
+                        // Update header info
+                        updateHeaderInfo(companyInfo);
+                        
+                        // Show success message
+                        const statusDiv = document.getElementById('companyInfoStatus');
+                        statusDiv.textContent = 'تم حفظ بيانات الشركة بنجاح';
+                        statusDiv.classList.remove('hidden');
+                        
+                        // Hide success message after 3 seconds
+                        setTimeout(() => {
+                            statusDiv.classList.add('hidden');
+                        }, 3000);
+                        
+                    } catch (error) {
+                        // Show error message
+                        const statusDiv = document.getElementById('companyInfoStatus');
+                        statusDiv.textContent = 'حدث خطأ أثناء حفظ البيانات: ' + error.message;
+                        statusDiv.classList.remove('hidden');
+                        statusDiv.classList.remove('text-green-500');
+                        statusDiv.classList.add('text-red-500');
+                        
+                        // Hide error message after 3 seconds
+                        setTimeout(() => {
+                            statusDiv.classList.add('hidden');
+                            statusDiv.classList.add('text-green-500');
+                            statusDiv.classList.remove('text-red-500');
+                        }, 3000);
+                    }
+                });
+            }
+            
+            // Handle Logo Upload
+            const companyLogoInput = document.getElementById('companyLogo');
+            if (companyLogoInput) {
+                companyLogoInput.addEventListener('change', function(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            const logoDisplay = document.getElementById('logoDisplay');
+                            if (logoDisplay) {
+                                logoDisplay.innerHTML = `<img src="${e.target.result}" alt="شعار الشركة" class="max-w-full max-h-full company-logo">`;
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+            
+            // Save System Settings
+            const saveSystemSettingsBtn = document.getElementById('saveSystemSettings');
+            if (saveSystemSettingsBtn) {
+                saveSystemSettingsBtn.addEventListener('click', function() {
+                    const systemSettings = {
+                        name: document.getElementById('systemName').value,
+                        version: '1.3'
+                    };
+                    
+                    SupplierStorage.saveSystemSettings(systemSettings);
+                    alert('تم حفظ إعدادات النظام بنجاح');
+                });
+            }
+            
+            // Save Regional Settings
+            const saveRegionalSettingsBtn = document.getElementById('saveRegionalSettings');
+            if (saveRegionalSettingsBtn) {
+                saveRegionalSettingsBtn.addEventListener('click', function() {
+                    const regionalSettings = {
+                        currency: document.getElementById('currency').value,
+                        numberFormat: document.getElementById('numberFormat').value,
+                        allowNegative: document.getElementById('allowNegative').value === 'true'
+                    };
+                    
+                    SupplierStorage.saveRegionalSettings(regionalSettings);
+                    alert('تم حفظ الإعدادات الإقليمية بنجاح');
+                });
+            }
+            
+            // Import Suppliers
+            const importSuppliersBtn = document.getElementById('importSuppliers');
+            if (importSuppliersBtn) {
+                importSuppliersBtn.addEventListener('click', function() {
+                    const fileInput = document.getElementById('supplierFileInput');
+                    const file = fileInput.files[0];
+                    
+                    if (!file) {
+                        alert('الرجاء اختيار ملف أولاً');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        
+                        // Assume first sheet is the suppliers data
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        
+                        // Convert to JSON
+                        const suppliers = XLSX.utils.sheet_to_json(worksheet);
+                        
+                        // Transform to our data structure
+                        const transformedSuppliers = suppliers.map((row, index) => {
+                            // Get values based on possible variations of column names
+                            const code = row['الكــود'] || row['الكود'] || row['كود'];
+                            const name = row['اســـم المـــــورد'] || row['اسم المورد'] || row['المورد'];
+                            const address = row['العنـــــــــــــــــــــوان'] || row['العنوان'];
+                            const phone1 = row['تلفـــــون'] || row['تلفون'] || row['هاتف'];
+                            const phone2 = row['تلفــون'] || row['تلفون ٢'] || '';
+                            const fax = row['فاكــس'] || row['فاكس'] || '';
+                            const account = row['الحســــاب'] || row['الحساب'] || '';
+                            const reference = row['المـــرجــــع'] || row['المرجع'] || row['الحســــاب المـــرجــــع'] || '';
+                            
+                            return {
+                                id: code || `SUP${index + 1}`,
+                                name: name || `مورد ${index + 1}`,
+                                address: address || '',
+                                phone1: phone1 || '',
+                                phone2: phone2 || '',
+                                fax: fax || '',
+                                account: account || '',
+                                reference: reference || ''
+                            };
+                        });
+                        
+                        // Save to localStorage
+                        SupplierStorage.saveSuppliers(transformedSuppliers);
+                        
+                        // Update UI
+                        loadSuppliersTable();
+                        loadSuppliersInDropdowns();
+                        
+                        alert(`تم استيراد ${transformedSuppliers.length} مورد بنجاح`);
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+            
+            // Clear Suppliers
+            const clearSuppliersBtn = document.getElementById('clearSuppliers');
+            if (clearSuppliersBtn) {
+                clearSuppliersBtn.addEventListener('click', function() {
+                    if (confirm('هل أنت متأكد من مسح جميع بيانات الموردين؟ سيتم حذف جميع البيانات المرتبطة بالموردين أيضًا.')) {
+                        SupplierStorage.saveSuppliers([]);
+                        
+                        // Remove all related data
+                        const allKeys = Object.keys(localStorage);
+                        const patternKeys = allKeys.filter(key => 
+                            key.startsWith('statements_') || 
+                            key.startsWith('matching_') || 
+                            key.startsWith('commission_') ||
+                            key.startsWith('unposted_') ||
+                            key.startsWith('commission_setup_')
+                        );
+                        
+                        patternKeys.forEach(key => {
+                            localStorage.removeItem(key);
+                        });
+                        
+                        loadSuppliersTable();
+                        loadSuppliersInDropdowns();
+                        
+                        alert('تم مسح جميع بيانات الموردين بنجاح');
+                    }
+                });
+            }
+            
+            // Supplier Search
+            const supplierSearchInput = document.getElementById('supplierSearch');
+            if (supplierSearchInput) {
+                supplierSearchInput.addEventListener('input', function() {
+                    const searchTerm = this.value.toLowerCase();
+                    const suppliers = SupplierStorage.getSuppliers();
+                    const tableBody = document.getElementById('suppliersTableBody');
+                    
+                    if (!tableBody || suppliers.length === 0) {
+                        return;
+                    }
+                    
+                    tableBody.innerHTML = '';
+                    
+                    const filteredSuppliers = suppliers.filter(supplier => 
+                        supplier.id.toLowerCase().includes(searchTerm) ||
+                        supplier.name.toLowerCase().includes(searchTerm) ||
+                        (supplier.address && supplier.address.toLowerCase().includes(searchTerm)) ||
+                        (supplier.phone1 && supplier.phone1.toLowerCase().includes(searchTerm))
+                    );
+                    
+                    if (filteredSuppliers.length === 0) {
+                        tableBody.innerHTML = `
+                            <tr>
+                                <td colspan="7" class="text-center py-4">لا توجد نتائج للبحث</td>
+                            </tr>
+                        `;
+                        return;
+                    }
+                    
+                    filteredSuppliers.forEach(supplier => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${supplier.id}</td>
+                            <td>${supplier.name}</td>
+                            <td>${supplier.address || ''}</td>
+                            <td>${supplier.phone1 || ''}</td>
+                            <td>${supplier.fax || ''}</td>
+                            <td>${supplier.reference || ''}</td>
+                            <td>
+                                <button class="edit-supplier bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 mr-1"
+                                        data-id="${supplier.id}">تعديل</button>
+                                <button class="delete-supplier bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                                        data-id="${supplier.id}">حذف</button>
+                            </td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                    
+                    // Re-add event listeners
+                    document.querySelectorAll('.edit-supplier').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const supplierId = this.dataset.id;
+                            editSupplier(supplierId);
+                        });
+                    });
+                    
+                    document.querySelectorAll('.delete-supplier').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const supplierId = this.dataset.id;
+                            deleteSupplier(supplierId);
+                        });
+                    });
+                });
+            }
+            
+            // Import Statement
+            const importStatementBtn = document.getElementById('importStatement');
+            if (importStatementBtn) {
+                importStatementBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('statementSupplier').value;
+                    const fileInput = document.getElementById('statementFileInput');
+                    const file = fileInput.files[0];
+                    
+                    if (!supplierId) {
+                        alert('الرجاء اختيار مورد أولاً');
+                        return;
+                    }
+                    
+                    if (!file) {
+                        alert('الرجاء اختيار ملف أولاً');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        
+                        // Assume first sheet is the statement data
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        
+                        // Convert to JSON
+                        const statements = XLSX.utils.sheet_to_json(worksheet);
+                        
+                        // Check for empty fields and prompt user
+                        const hasEmptyFields = statements.some(row => {
+                            return !row['الفرع'] || row['الفرع'] === '';
+                        });
+                        
+                        if (hasEmptyFields) {
+                            // Show modal for filling empty fields
+                            promptFillEmptyFields(supplierId, statements);
+                        } else {
+                            // Process statements normally
+                            processImportedStatements(supplierId, statements);
+                        }
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+            
+            // Clear Statement
+            const clearStatementBtn = document.getElementById('clearStatement');
+            if (clearStatementBtn) {
+                clearStatementBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('statementSupplier').value;
+                    
+                    if (!supplierId) {
+                        alert('الرجاء اختيار مورد أولاً');
+                        return;
+                    }
+                    
+                    if (confirm(`هل أنت متأكد من مسح كشف حساب المورد؟`)) {
+                        localStorage.removeItem(`statements_${supplierId}`);
+                        
+                        alert('تم مسح كشف الحساب بنجاح');
+                        
+                        // Update UI if current view statement supplier is the same
+                        const viewStatementSupplier = document.getElementById('viewStatementSupplier');
+                        if (viewStatementSupplier && viewStatementSupplier.value === supplierId) {
+                            loadStatements(supplierId);
+                        }
+                    }
+                });
+            }
+            
+            // View Statement Supplier Change
+            const viewStatementSupplierSelect = document.getElementById('viewStatementSupplier');
+            if (viewStatementSupplierSelect) {
+                viewStatementSupplierSelect.addEventListener('change', function() {
+                    const supplierId = this.value;
+                    
+                    if (supplierId) {
+                        loadStatements(supplierId);
+                        
+                        const sendStatementWhatsappBtn = document.getElementById('sendStatementWhatsapp');
+                        const printStatementBtn = document.getElementById('printStatement');
+                        
+                        if (sendStatementWhatsappBtn) {
+                            sendStatementWhatsappBtn.classList.remove('hidden');
+                        }
+                        
+                        if (printStatementBtn) {
+                            printStatementBtn.classList.remove('hidden');
+                        }
+                        
+                        // Display statement number
+                        const statementNumber = SupplierStorage.getCurrentStatementNumber();
+                        const statementNumberElement = document.getElementById('statementNumber');
+                        const statementDateElement = document.getElementById('statementDate');
+                        
+                        if (statementNumber > 0) {
+                            if (statementNumberElement) {
+                                statementNumberElement.textContent = `رقم الكشف: ${statementNumber}`;
+                            }
+                            
+                            if (statementDateElement) {
+                                statementDateElement.textContent = `التاريخ: ${new Date().toLocaleDateString('ar-SA')}`;
+                            }
+                        } else {
+                            if (statementNumberElement) {
+                                statementNumberElement.textContent = '';
+                            }
+                            
+                            if (statementDateElement) {
+                                statementDateElement.textContent = '';
+                            }
+                        }
+                    } else {
+                        const statementsTableBody = document.getElementById('statementsTableBody');
+                        if (statementsTableBody) {
+                            statementsTableBody.innerHTML = `
+                                <tr>
+                                    <td colspan="10" class="text-center py-4">الرجاء اختيار مورد أولاً</td>
+                                </tr>
+                            `;
+                        }
+                        
+                        const sendStatementWhatsappBtn = document.getElementById('sendStatementWhatsapp');
+                        const printStatementBtn = document.getElementById('printStatement');
+                        const statementNumberElement = document.getElementById('statementNumber');
+                        const statementDateElement = document.getElementById('statementDate');
+                        
+                        if (sendStatementWhatsappBtn) {
+                            sendStatementWhatsappBtn.classList.add('hidden');
+                        }
+                        
+                        if (printStatementBtn) {
+                            printStatementBtn.classList.add('hidden');
+                        }
+                        
+                        if (statementNumberElement) {
+                            statementNumberElement.textContent = '';
+                        }
+                        
+                        if (statementDateElement) {
+                            statementDateElement.textContent = '';
+                        }
+                    }
+                });
+            }
+            
+            // Print Statement
+            const printStatementBtn = document.getElementById('printStatement');
+            if (printStatementBtn) {
+                printStatementBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('viewStatementSupplier').value;
+                    
+                    if (!supplierId) {
+                        alert('الرجاء اختيار مورد أولاً');
+                        return;
+                    }
+                    
+                    const suppliers = SupplierStorage.getSuppliers();
+                    const supplier = suppliers.find(s => s.id === supplierId);
+                    
+                    if (!supplier) {
+                        alert('المورد غير موجود');
+                        return;
+                    }
+                    
+                    const companyInfo = SupplierStorage.getCompanyInfo();
+                    const statements = SupplierStorage.getStatements(supplierId);
+                    const statementNumber = SupplierStorage.getCurrentStatementNumber();
+                    
+                    if (statements.length === 0) {
+                        alert('لا توجد بيانات في كشف الحساب');
+                        return;
+                    }
+                    
+                    // Calculate totals
+                    const totalDebit = statements.reduce((acc, s) => acc + s.debit, 0);
+                    const totalCredit = statements.reduce((acc, s) => acc + s.credit, 0);
+                    const finalBalance = statements[statements.length - 1].balance;
+                    
+                    // Create a new window for printing
+                    const printWindow = window.open('', '_blank');
+                    
+                    // Get logo size from settings
+                    const logoSize = companyInfo.logoSize || 80;
+                    
+                    printWindow.document.write(`
+                        <html dir="rtl" lang="ar">
+                        <head>
+                            <meta charset="UTF-8">
+                            <title>كشف حساب مورد</title>
+                            <style>
+                                @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+                                
+                                body {
+                                    font-family: 'Tajawal', sans-serif;
+                                    padding: 20px;
+                                    direction: rtl;
+                                }
+                                
+                                .header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    margin-bottom: 20px;
+                                    border-bottom: 2px solid #40B3EF;
+                                    padding-bottom: 10px;
+                                    position: fixed;
+                                    top: 0;
+                                    left: 0;
+                                    right: 0;
+                                    width: 100%;
+                                    background-color: white;
+                                    z-index: 1000;
+                                }
+                                
+                                .statement-info {
+                                    margin-bottom: 20px;
+                                    margin-top: 130px; /* Space for fixed header */
+                                }
+                                
+                                table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                }
+                                
+                                th, td {
+                                    border: 1px solid #ddd;
+                                    padding: 8px;
+                                    text-align: right;
+                                }
+                                
+                                th {
+                                    background-color: #40B3EF;
+                                    color: white;
+                                }
+                                
+                                .summary {
+                                    margin-top: 20px;
+                                    border-top: 2px solid #40B3EF;
+                                    padding-top: 10px;
+                                }
+                                
+                                .footer {
+                                    margin-top: 40px;
+                                    text-align: center;
+                                    font-size: 12px;
+                                }
+                                
+                                .print-logo {
+                                    max-width: ${logoSize}px;
+                                    max-height: ${logoSize}px;
+                                    object-fit: contain;
+                                }
+                                
+                                @media print {
+                                    @page {
+                                        size: portrait;
+                                        margin: 10mm;
+                                    }
+                                    
+                                    body {
+                                        font-size: 12pt;
+                                    }
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="header">
+                                <div>
+                                    <h2>${companyInfo.nameAr || 'الشركة'}</h2>
+                                    <p>${companyInfo.branch ? 'فرع: ' + companyInfo.branch : ''}</p>
+                                    <p>${companyInfo.address || ''}</p>
+                                    <p>هاتف: ${companyInfo.phone || companyInfo.mobile || ''}</p>
+                                </div>
+                                ${companyInfo.logo ? `<img src="${companyInfo.logo}" alt="شعار الشركة" class="print-logo">` : ''}
+                                <div>
+                                    <p><strong>رقم الكشف:</strong> ${statementNumber}</p>
+                                    <p>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="statement-info">
+                                <h2>كشف حساب</h2>
+                                <p><strong>المورد:</strong> ${supplier.name}</p>
+                                <p><strong>الكود:</strong> ${supplier.id}</p>
+                                <p><strong>العنوان:</strong> ${supplier.address || ''}</p>
+                                <p><strong>الهاتف:</strong> ${supplier.phone1 || ''}</p>
+                            </div>
+                            
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>الفرع</th>
+                                        <th>التاريخ</th>
+                                        <th>رقم المستند</th>
+                                        <th>نوع المستند</th>
+                                        <th>البيان</th>
+                                        <th>مدين</th>
+                                        <th>دائن</th>
+                                        <th>الرصيد</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${statements.map(statement => `
+                                        <tr>
+                                            <td>${statement.branch}</td>
+                                            <td>${statement.date}</td>
+                                            <td>${statement.docNo}</td>
+                                            <td>${statement.docType || ''}</td>
+                                            <td>${statement.description}</td>
+                                            <td>${formatNumber(statement.debit)}</td>
+                                            <td>${formatNumber(statement.credit)}</td>
+                                            <td>${formatNumber(statement.balance)}</td>
+                                        </tr>
+                                    `).join('')}
+                                    <tr style="font-weight: bold; background-color: #f2f2f2;">
+                                        <td colspan="5" style="text-align: center;">الإجمالي</td>
+                                        <td>${formatNumber(totalDebit)}</td>
+                                        <td>${formatNumber(totalCredit)}</td>
+                                        <td>${formatNumber(finalBalance)}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            
+                            <div class="summary">
+                                <p><strong>إجمالي المدين:</strong> ${formatNumber(totalDebit)}</p>
+                                <p><strong>إجمالي الدائن:</strong> ${formatNumber(totalCredit)}</p>
+                                <p><strong>الرصيد النهائي:</strong> ${formatNumber(finalBalance)}</p>
+                            </div>
+                            
+                            <div class="footer">
+                                <p>للاستفسار يرجى التواصل بنا على ${companyInfo.whatsapp || companyInfo.mobile || companyInfo.phone || ''}</p>
+                                <p>&copy; ${new Date().getFullYear()} ${companyInfo.nameAr || 'جميع الحقوق محفوظة'}</p>
+                            </div>
+                        </body>
+                        </html>
+                    `);
+                    
+                    printWindow.document.close();
+                    setTimeout(() => {
+                        printWindow.print();
+                    }, 500);
+                });
+            }
+            
+            // Add New Document Type
+            const addNewDocTypeBtn = document.getElementById('addNewDocType');
+            if (addNewDocTypeBtn) {
+                addNewDocTypeBtn.addEventListener('click', function() {
+                    const name = document.getElementById('newDocTypeName').value;
+                    const keywords = document.getElementById('newDocTypeKeywords').value;
+                    
+                    if (!name || !keywords) {
+                        alert('الرجاء إدخال نوع المستند والكلمات المفتاحية');
+                        return;
+                    }
+                    
+                    const docTypes = loadDocumentTypes();
+                    
+                    // Check if document type already exists
+                    const exists = docTypes.some(docType => docType.type === name);
+                    if (exists) {
+                        alert('نوع المستند موجود بالفعل، الرجاء استخدام اسم آخر');
+                        return;
+                    }
+                    
+                    docTypes.push({
+                        type: name,
+                        keywords: keywords
+                    });
+                    
+                    SupplierStorage.saveDocumentTypes(docTypes);
+                    loadDocTypesSettings();
+                    loadDocTypeSelects();
+                    
+                    // Clear inputs
+                    document.getElementById('newDocTypeName').value = '';
+                    document.getElementById('newDocTypeKeywords').value = '';
+                    
+                    alert('تم إضافة نوع المستند بنجاح');
+                });
+            }
+            
+            // Save Document Types Settings
+            const saveDocTypesSettingsBtn = document.getElementById('saveDocTypesSettings');
+            if (saveDocTypesSettingsBtn) {
+                saveDocTypesSettingsBtn.addEventListener('click', function() {
+                    alert('تم حفظ إعدادات أنواع المستندات بنجاح');
+                });
+            }
+            
+            // Reset Document Types Settings
+            const resetDocTypesSettingsBtn = document.getElementById('resetDocTypesSettings');
+            if (resetDocTypesSettingsBtn) {
+                resetDocTypesSettingsBtn.addEventListener('click', function() {
+                    if (confirm('هل أنت متأكد من إعادة تعيين أنواع المستندات إلى الإعدادات الافتراضية؟')) {
+                        SupplierStorage.saveDocumentTypes(DEFAULT_DOC_TYPES);
+                        loadDocTypesSettings();
+                        loadDocTypeSelects();
+                        alert('تم إعادة تعيين أنواع المستندات إلى الإعدادات الافتراضية بنجاح');
+                    }
+                });
+            }
+            
+            // مستمع حدث تغيير المورد في شاشة ترميز العمولات
+            const commissionSetupSupplierSelect = document.getElementById('commissionSetupSupplier');
+            if (commissionSetupSupplierSelect) {
+                commissionSetupSupplierSelect.addEventListener('change', function() {
+                    loadCommissionSetupScreen();
+                });
+            }
+            
+            // حفظ إعدادات العمولة
+            const saveCommissionSetupBtn = document.getElementById('saveCommissionSetup');
+            if (saveCommissionSetupBtn) {
+                saveCommissionSetupBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('commissionSetupSupplier').value;
+                    saveCommissionSetup(supplierId);
+                });
+            }
+            
+            // إعادة تعيين إعدادات العمولة
+            const resetCommissionSetupBtn = document.getElementById('resetCommissionSetup');
+            if (resetCommissionSetupBtn) {
+                resetCommissionSetupBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('commissionSetupSupplier').value;
+                    resetCommissionSetup(supplierId);
+                });
+            }
+            
+            // مستمع حدث تغيير المورد في شاشة مطابقة الكشوفات
+            const matchSupplierSelect = document.getElementById('matchSupplier');
+            if (matchSupplierSelect) {
+                matchSupplierSelect.addEventListener('change', function() {
+                    const supplierId = this.value;
+                    if (supplierId) {
+                        loadMatchingOperations(supplierId);
+                    }
+                });
+            }
+            
+            // حفظ بيانات المطابقة
+            const saveMatchingBtn = document.getElementById('saveMatching');
+            if (saveMatchingBtn) {
+                saveMatchingBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('matchSupplier').value;
+                    
+                    if (!supplierId) {
+                        alert('الرجاء اختيار مورد أولاً');
+                        return;
+                    }
+                    
+                    saveMatchingData(supplierId);
+                });
+            }
+            
+            // حساب العمولة الافتراضية
+            const calculateDefaultCommissionBtn = document.getElementById('calculateDefaultCommission');
+            if (calculateDefaultCommissionBtn) {
+                calculateDefaultCommissionBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('commissionSupplier').value;
+                    
+                    if (!supplierId) {
+                        alert('الرجاء اختيار مورد أولاً');
+                        return;
+                    }
+                    
+                    // استرجاع بيانات العمولة
+                    const commissionSetup = SupplierStorage.getCommissionSetup(supplierId);
+                    
+                    if (!commissionSetup) {
+                        alert('لا توجد إعدادات للعمولة لهذا المورد، يرجى إعداد العمولة أولاً');
+                        return;
+                    }
+                    
+                    // استرجاع بيانات الكشف
+                    const statements = SupplierStorage.getStatements(supplierId);
+                    
+                    if (statements.length === 0) {
+                        alert('لا توجد بيانات في كشف الحساب لهذا المورد');
+                        return;
+                    }
+                    
+                    // بناء جدول العمولات
+                    const commissionsData = statements.map(statement => {
+                        // البحث عن إعدادات العمولة لنوع المستند
+                        const docTypeSetup = commissionSetup.docTypes.find(dt => dt.type === statement.docType);
+                        
+                        // إذا لم يكن هناك إعدادات للعمولة لهذا النوع، استخدم الإعدادات الافتراضية
+                        const enabled = docTypeSetup ? docTypeSetup.enabled : true;
+                        const commissionType = docTypeSetup ? docTypeSetup.commissionType : commissionSetup.defaultType;
+                        const percentage = docTypeSetup ? docTypeSetup.percentage : commissionSetup.defaultPercentage;
+                        
+                        // حساب مبلغ العمولة
+                        // القاعدة: من الدائن (إذا كان المستند مدين) أو من المدين (إذا كان المستند دائن)
+                        let amount = 0;
+                        if (enabled) {
+                            if (statement.debit > 0) {
+                                amount = statement.debit * (percentage / 100);
+                            } else if (statement.credit > 0) {
+                                amount = statement.credit * (percentage / 100);
+                            }
+                        }
+                        
+                        return {
+                            statementId: statement.id,
+                            date: statement.date,
+                            docNo: statement.docNo,
+                            docType: statement.docType,
+                            description: statement.description,
+                            debit: statement.debit,
+                            credit: statement.credit,
+                            hasCommission: enabled,
+                            commissionType: commissionType,
+                            commissionPercentage: percentage,
+                            commissionAmount: amount
+                        };
+                    });
+                    
+                    // حفظ بيانات العمولة
+                    SupplierStorage.saveCommissionData(supplierId, commissionsData);
+                    
+                    // تحديث واجهة المستخدم
+                    loadCommissionsTable(supplierId);
+                    
+                    alert('تم حساب العمولة بنجاح');
+                });
+            }
+            
+            // تغيير المورد في شاشة إدارة العمولات
+            const commissionSupplierSelect = document.getElementById('commissionSupplier');
+            if (commissionSupplierSelect) {
+                commissionSupplierSelect.addEventListener('change', function() {
+                    const supplierId = this.value;
+                    if (supplierId) {
+                        loadCommissionsTable(supplierId);
+                    }
+                });
+            }
+            
+            // حفظ العمولات
+            const saveCommissionsBtn = document.getElementById('saveCommissions');
+            if (saveCommissionsBtn) {
+                saveCommissionsBtn.addEventListener('click', function() {
+                    const supplierId = document.getElementById('commissionSupplier').value;
+                    
+                    if (!supplierId) {
+                        alert('الرجاء اختيار مورد أولاً');
+                        return;
+                    }
+                    
+                    // تجميع البيانات من الجدول
+                    const updatedCommissions = [];
+                    document.querySelectorAll('tr[data-statement-id]').forEach(row => {
+                        const statementId = row.dataset.statementId;
+                        const hasCommission = row.querySelector('.has-commission').checked;
+                        const commissionType = row.querySelector('.commission-type-select').value;
+                        const commissionPercentage = parseFloat(row.querySelector('.commission-percentage').value) || 0;
+                        const commissionAmount = parseFloat(row.querySelector('.commission-amount').value) || 0;
+                        
+                        updatedCommissions.push({
+                            statementId,
+                            date: row.dataset.date,
+                            docNo: row.dataset.docNo,
+                            docType: row.dataset.docType,
+                            description: row.dataset.description,
+                            debit: parseFloat(row.dataset.debit) || 0,
+                            credit: parseFloat(row.dataset.credit) || 0,
+                            hasCommission,
+                            commissionType,
+                            commissionPercentage,
+                            commissionAmount
+                        });
+                    });
+                    
+                    // حفظ البيانات
+                    SupplierStorage.saveCommissionData(supplierId, updatedCommissions);
+                    
+                    // تحديث إجماليات العمولة
+                    updateCommissionSummary(supplierId);
+                    
+                    alert('تم حفظ بيانات العمولات بنجاح');
+                });
+            }
+        }
+        
+        // تحميل جدول العمولات
+        function loadCommissionsTable(supplierId) {
+            const commissionsData = SupplierStorage.getCommissionData(supplierId);
+            const tableBody = document.getElementById('commissionsTableBody');
+            
+            if (!tableBody) return;
+            
+            if (!supplierId || commissionsData.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="text-center py-4">لا توجد بيانات متاحة لهذا المورد</td>
+                    </tr>
+                `;
+                
+                // تصفير ملخص العمولات
+                document.getElementById('totalCashCommission').textContent = formatNumber(0);
+                document.getElementById('totalInKindCommission').textContent = formatNumber(0);
+                document.getElementById('receivedCashCommission').value = 0;
+                document.getElementById('receivedInKindCommission').value = 0;
+                
+                return;
+            }
+            
+            tableBody.innerHTML = '';
+            
+            commissionsData.forEach(commission => {
+                const row = document.createElement('tr');
+                row.setAttribute('data-statement-id', commission.statementId);
+                row.setAttribute('data-date', commission.date);
+                row.setAttribute('data-doc-no', commission.docNo);
+                row.setAttribute('data-doc-type', commission.docType);
+                row.setAttribute('data-description', commission.description);
+                row.setAttribute('data-debit', commission.debit);
+                row.setAttribute('data-credit', commission.credit);
+                
+                row.innerHTML = `
+                    <td>${commission.date}</td>
+                    <td>${commission.docNo}</td>
+                    <td>${commission.docType || ''}</td>
+                    <td title="${commission.description}">${commission.description.substring(0, 20)}${commission.description.length > 20 ? '...' : ''}</td>
+                    <td>${formatNumber(commission.debit)}</td>
+                    <td>${formatNumber(commission.credit)}</td>
+                    <td>
+                        <input type="checkbox" class="has-commission form-checkbox h-5 w-5 text-primary" 
+                               ${commission.hasCommission ? 'checked' : ''}>
+                    </td>
+                    <td>
+                        <select class="commission-type-select w-full p-1 border border-gray-300 rounded text-sm">
+                            <option value="cash" ${commission.commissionType === 'cash' ? 'selected' : ''}>عمولة نقدية</option>
+                            <option value="kind" ${commission.commissionType === 'kind' ? 'selected' : ''}>عمولة عينية</option>
+                            <option value="inclusive" ${commission.commissionType === 'inclusive' ? 'selected' : ''}>شاملة العمولة</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="number" class="commission-percentage w-full p-1 border border-gray-300 rounded text-sm" 
+                               value="${commission.commissionPercentage}" min="0" max="100" step="0.01">
+                    </td>
+                    <td>
+                        <input type="number" class="commission-amount w-full p-1 border border-gray-300 rounded text-sm" 
+                               value="${commission.commissionAmount}">
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // إضافة مستمعي الأحداث للحقول
+            document.querySelectorAll('.has-commission, .commission-type-select, .commission-percentage, .commission-amount').forEach(element => {
+                element.addEventListener('change', function() {
+                    updateCommissionSummary(supplierId);
+                });
+            });
+            
+            // تحديث ملخص العمولات
+            updateCommissionSummary(supplierId);
+        }
+        
+        // تحديث ملخص العمولات
+        function updateCommissionSummary(supplierId) {
+            let totalCashCommission = 0;
+            let totalInKindCommission = 0;
+            
+            document.querySelectorAll('tr[data-statement-id]').forEach(row => {
+                const hasCommission = row.querySelector('.has-commission').checked;
+                if (hasCommission) {
+                    const commissionType = row.querySelector('.commission-type-select').value;
+                    const commissionAmount = parseFloat(row.querySelector('.commission-amount').value) || 0;
+                    
+                    if (commissionType === 'cash') {
+                        totalCashCommission += commissionAmount;
+                    } else if (commissionType === 'kind') {
+                        totalInKindCommission += commissionAmount;
+                    }
+                }
+            });
+            
+            // تحديث عرض الإجماليات
+            document.getElementById('totalCashCommission').textContent = formatNumber(totalCashCommission);
+            document.getElementById('totalInKindCommission').textContent = formatNumber(totalInKindCommission);
+            
+            // تعيين القيم الافتراضية للعمولات المستلمة إذا كانت 0
+            const receivedCashElement = document.getElementById('receivedCashCommission');
+            const receivedInKindElement = document.getElementById('receivedInKindCommission');
+            
+            if (receivedCashElement.value == 0) {
+                receivedCashElement.value = totalCashCommission;
+            }
+            
+            if (receivedInKindElement.value == 0) {
+                receivedInKindElement.value = totalInKindCommission;
+            }
+        }
+        
+        // Main initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize tree navigation
+            initializeTreeNavigation();
+
+            // Initialize screen navigation
+            initializeScreenNavigation();
+            
+            // Load Company Info
+            const companyInfo = SupplierStorage.getCompanyInfo();
+            
+            if (companyInfo.nameAr) {
+                document.getElementById('companyNameAr').value = companyInfo.nameAr;
+                document.getElementById('companyNameEn').value = companyInfo.nameEn || '';
+                document.getElementById('companyBranch').value = companyInfo.branch || '';
+                document.getElementById('companyAddress').value = companyInfo.address || '';
+                document.getElementById('companyMobile').value = companyInfo.mobile || '';
+                document.getElementById('companyWhatsapp').value = companyInfo.whatsapp || '';
+                document.getElementById('companyPhone').value = companyInfo.phone || '';
+                document.getElementById('companyEmail').value = companyInfo.email || '';
+                
+                // Update logo size
+                if (companyInfo.logoSize) {
+                    document.getElementById('logoSize').value = companyInfo.logoSize;
+                    document.getElementById('logoSizeValue').textContent = `${companyInfo.logoSize}%`;
+                }
+                
+                // Display company info in header
+                updateHeaderInfo(companyInfo);
+                
+                // Display logo if exists
+                if (companyInfo.logo) {
+                    const logoDisplay = document.getElementById('logoDisplay');
+                    logoDisplay.innerHTML = `<img src="${companyInfo.logo}" alt="شعار الشركة" class="max-w-full max-h-full company-logo">`;
+                }
+            }
+            
+            // Load System Settings
+            const systemSettings = SupplierStorage.getSystemSettings();
+            document.getElementById('systemName').value = systemSettings.name;
+            
+            // Load Regional Settings
+            const regionalSettings = SupplierStorage.getRegionalSettings();
+            document.getElementById('currency').value = regionalSettings.currency;
+            document.getElementById('numberFormat').value = regionalSettings.numberFormat;
+            document.getElementById('allowNegative').value = regionalSettings.allowNegative.toString();
+            
+            // Load Document Types
+            loadDocTypesSettings();
+            loadDocTypeSelects();
+            
+            // Load Suppliers data
+            loadSuppliersTable();
+            
+            // Load Suppliers in all dropdowns
+            loadSuppliersInDropdowns();
+            
+            // Initialize all event listeners
+            initializeEventListeners();
+            
+            // Open all tree menus by default
+            document.querySelectorAll('.tree-view').forEach(view => {
+                view.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>
